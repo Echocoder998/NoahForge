@@ -72,7 +72,7 @@ export function DesignBench() {
       }
       pushChat({ role: "assistant", text: res.reply + note, designId });
     } catch {
-      pushChat({ role: "assistant", text: "Something went wrong reaching Claude. Try again.", error: true });
+      pushChat({ role: "assistant", text: "Something went wrong reaching Noah Forge. Try again.", error: true });
     } finally {
       setBusy(false);
     }
@@ -90,10 +90,10 @@ export function DesignBench() {
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-xs font-bold tracking-[0.18em] text-mint">
               <Sparkles className="size-3.5" aria-hidden />
-              DESIGN WITH CLAUDE
+              DESIGN WITH NOAH FORGE
             </p>
-            <p className="mt-1 truncate text-sm text-dust">
-              {editing ? `Changing ${editing.name}` : "Describe a machine and Claude will draft it."}
+            <p className="mt-1 line-clamp-2 text-sm text-dust">
+              {editing ? `Changing ${editing.name}` : "Describe a machine and Noah Forge will draft it."}
             </p>
           </div>
           <button
@@ -143,7 +143,7 @@ export function DesignBench() {
           {busy && (
             <p className="flex items-center gap-2 text-sm text-cyan">
               <Loader2 className="size-4 animate-spin" aria-hidden />
-              Claude is designing… this can take up to a minute.
+              Noah Forge is designing… this can take up to a minute.
             </p>
           )}
         </div>
@@ -156,7 +156,7 @@ export function DesignBench() {
           }}
         >
           <label className="sr-only" htmlFor="design-msg">
-            Message Claude
+            Message Noah Forge
           </label>
           <textarea
             id="design-msg"
@@ -187,7 +187,7 @@ export function DesignBench() {
       <aside className="min-w-0 rounded-md border border-line bg-panel p-4">
         <p className="font-mono text-xs tracking-widest text-dust">YOUR DESIGNS</p>
         {customs.length === 0 ? (
-          <p className="mt-2 text-sm text-dust">Designs Claude makes show up here and next to Plane, Drone and the rest.</p>
+          <p className="mt-2 text-sm text-dust">Designs Noah Forge makes show up here and next to Plane, Drone and the rest.</p>
         ) : (
           <ul className="mt-2 grid gap-2">
             {[...customs].reverse().map((d) => {
@@ -233,7 +233,7 @@ export function DesignBench() {
           </button>
         )}
         <p className="mt-4 text-xs text-dust">
-          Claude only picks parts from the Wire catalog and a starter sketch from the Code list. The wiring check
+          Noah Forge only picks parts from the Wire catalog and a starter sketch from the Code list. The wiring check
           still decides what is safe. Each message costs a few cents of API credit.
         </p>
       </aside>

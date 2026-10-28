@@ -17,7 +17,7 @@ export type ChatResult =
   | { ok: false; error: string };
 
 // Stable text only, so the prompt cache can reuse it on every turn.
-const SYSTEM = `You help a student design small robots and RC machines in Noah Forge, a build planner. The student describes a machine; you return a design the app draws in 3D, wires, and turns into a starter Arduino sketch from a fixed template.
+const SYSTEM = `You are the Noah Forge design assistant. You help a student design small robots and RC machines in Noah Forge, a build planner. The student describes a machine; you return a design the app draws in 3D, wires, and turns into a starter Arduino sketch from a fixed template.
 
 How the 3D bay works
 - Units are roughly meters at toy scale. y is up, the floor is y = 0, the front of the machine faces -z, +x is the machine's right.
@@ -59,7 +59,7 @@ How to answer
 
 export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
-    return { ok: false, error: "Claude isn't set up yet: the ANTHROPIC_API_KEY setting is missing on the server." };
+    return { ok: false, error: "Noah Forge's designer isn't set up yet: the ANTHROPIC_API_KEY setting is missing on the server." };
   }
 
   const history = input.messages.filter((m) => m.text.trim());
@@ -95,13 +95,13 @@ export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
     });
 
     if (response.stop_reason === "refusal") {
-      return { ok: false, error: "Claude declined that one. Try describing the machine differently." };
+      return { ok: false, error: "The designer declined that one. Try describing the machine differently." };
     }
     if (response.stop_reason === "max_tokens") {
       return { ok: false, error: "That design got too big to finish. Ask for something with fewer parts." };
     }
     const out = response.parsed_output;
-    if (!out) return { ok: false, error: "Claude's answer didn't come back in the right shape. Try again." };
+    if (!out) return { ok: false, error: "The designer's answer didn't come back in the right shape. Try again." };
     return { ok: true, reply: out.reply, changed: out.changed, design: out.design };
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
@@ -111,11 +111,11 @@ export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
       return { ok: false, error: "Too many requests at once. Wait a minute and try again." };
     }
     if (err instanceof Anthropic.APIConnectionError) {
-      return { ok: false, error: "Couldn't reach Claude. Check the connection and try again." };
+      return { ok: false, error: "Couldn't reach the designer. Check the connection and try again." };
     }
     if (err instanceof Anthropic.APIError) {
       // A 400 here is usually an empty credit balance; the API says so in the message.
-      return { ok: false, error: `Claude couldn't answer (${err.status ?? "error"}): ${err.message}` };
+      return { ok: false, error: `The designer couldn't answer (${err.status ?? "error"}): ${err.message}` };
     }
     throw err;
   }

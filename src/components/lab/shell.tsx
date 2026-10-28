@@ -44,9 +44,13 @@ export function Lab() {
       <header className="sticky top-0 z-20 border-b border-line bg-ink/75 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-md bg-cyan font-display text-base font-bold text-ink">
-              NF
-            </span>
+            <img
+              src="/logo-mark.png"
+              alt=""
+              width={44}
+              height={44}
+              className="size-11 rounded-md drop-shadow-[0_0_10px_rgb(38_231_255/0.45)]"
+            />
             <div>
               <h1 className="font-display text-xl font-semibold leading-none">Noah Forge</h1>
               <p className="mt-1.5 text-[0.68rem] font-bold tracking-[0.32em] text-cyan text-glow">PRINT · WIRE · FLASH</p>
