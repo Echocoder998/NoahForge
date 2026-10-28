@@ -40,20 +40,20 @@ export function Viewport({ positions, indices, color }: Props) {
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
 
-      scene.add(new THREE.HemisphereLight(0xf3ecdf, 0x2a2418, 0.9));
-      const key = new THREE.DirectionalLight(0xfff6e8, 2.2);
+      scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x1a1440, 0.9));
+      const key = new THREE.DirectionalLight(0xf2f8ff, 2.2);
       key.position.set(90, 160, 70);
       scene.add(key);
-      const rim = new THREE.DirectionalLight(0xe8a317, 0.85);
+      const rim = new THREE.DirectionalLight(0xa855ff, 0.85);
       rim.position.set(-110, 50, -40);
       scene.add(rim);
 
-      const bedMat = new THREE.MeshStandardMaterial({ color: 0x2a261f, roughness: 1 });
+      const bedMat = new THREE.MeshStandardMaterial({ color: 0x0e1430, roughness: 1 });
       const bed = new THREE.Mesh(new THREE.CircleGeometry(1, 72), bedMat);
       bed.rotation.x = -Math.PI / 2;
       bed.position.y = -0.15;
       scene.add(bed);
-      const grid = new THREE.GridHelper(10, 10, 0x6a5d48, 0x3a342b);
+      const grid = new THREE.GridHelper(10, 10, 0x26e7ff, 0x1d2b5c);
       grid.position.y = 0;
       scene.add(grid);
 
@@ -61,7 +61,7 @@ export function Viewport({ positions, indices, color }: Props) {
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.rotation.x = -Math.PI / 2;
       scene.add(mesh);
-      const edgeMat = new THREE.LineBasicMaterial({ color: 0xe8a317 });
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x26e7ff });
       const edges = new THREE.LineSegments(new THREE.BufferGeometry(), edgeMat);
       edges.rotation.x = -Math.PI / 2;
       scene.add(edges);

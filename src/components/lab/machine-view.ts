@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { ChassisId } from "@/lib/robots/chassis";
+import type { CustomDesign, Motion } from "@/lib/robots/design";
 
 export type Live = {
   chassis: ChassisId;
@@ -8,6 +9,7 @@ export type Live = {
   scale: number;
   testing: boolean;
   project: string;
+  design: CustomDesign | null;
 };
 
 export type ControlsProbe = {
@@ -34,12 +36,14 @@ type Sim = {
   climb: number;
   throttle: number;
   phase: number;
+  active: number;
 };
 
 type Rig = {
   root: THREE.Group;
   tick: (phase: number, speed: number) => void;
   dispose: () => void;
+  frame?: { dist: number; height: number };
 };
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -53,33 +57,33 @@ export function mountMachine(
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.setClearColor(0x12110e, 1);
+  renderer.setClearColor(0x070913, 1);
   renderer.domElement.style.touchAction = "none";
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x12110e, 14, 42);
+  scene.fog = new THREE.Fog(0x070913, 14, 42);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.08, 80);
   const desired = new THREE.Vector3();
 
-  scene.add(new THREE.HemisphereLight(0xf3ecdf, 0x2a2418, 0.85));
-  const key = new THREE.DirectionalLight(0xfff6e8, 2.4);
+  scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x1a1440, 0.85));
+  const key = new THREE.DirectionalLight(0xf2f8ff, 2.4);
   key.position.set(4, 8, 3);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0xe8a317, 0.7);
+  const rim = new THREE.DirectionalLight(0xa855ff, 0.7);
   rim.position.set(-4, 3, -2);
   scene.add(rim);
 
   const floor = new THREE.Mesh(
     new THREE.CircleGeometry(18, 64),
-    new THREE.MeshStandardMaterial({ color: 0x1a1814, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0x0b1028, roughness: 1 }),
   );
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
-  const grid = new THREE.GridHelper(28, 28, 0x6a5d48, 0x3a342b);
+  const grid = new THREE.GridHelper(28, 28, 0x26e7ff, 0x1a2550);
   scene.add(grid);
   const stripe = new THREE.Mesh(
     new THREE.BoxGeometry(0.08, 0.01, 16),
-    new THREE.MeshStandardMaterial({ color: 0xe8a317, roughness: 0.6 }),
+    new THREE.MeshStandardMaterial({ color: 0x26e7ff, roughness: 0.6 }),
   );
   stripe.position.set(0, 0.012, -6);
   scene.add(stripe);
@@ -95,7 +99,7 @@ export function mountMachine(
   const holder = new THREE.Group();
   scene.add(holder);
 
-  const sim: Sim = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, speed: 0, climb: 0, throttle: 0, phase: 0 };
+  const sim: Sim = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, speed: 0, climb: 0, throttle: 0, phase: 0, active: 0 };
   const real = new Set<string>();
   let override: Set<string> | null = null;
   const held = () => override ?? real;
@@ -111,6 +115,7 @@ export function mountMachine(
     sim.speed = 0;
     sim.climb = 0;
     sim.throttle = 0;
+    sim.active = 0;
   };
 
   const probeOn = import.meta.env.DEV || new URLSearchParams(window.location.search).has("qa");
@@ -150,15 +155,16 @@ export function mountMachine(
   let wasTesting = false;
   let orbit = 0.85;
 
+  const keyOf = (v: Live) => `${v.chassis}|${v.legs}|${v.color}|${v.design ? `${v.design.id}:${v.design.updatedAt}` : ""}`;
   const rebuild = () => {
-    const { chassis, legs, color } = live.current;
+    const { chassis, legs, color, design } = live.current;
     if (rig) {
       holder.remove(rig.root);
       rig.dispose();
     }
-    rig = buildRig(chassis, legs, color);
+    rig = design ? buildCustom(design, color) : buildRig(chassis, legs, color);
     holder.add(rig.root);
-    built = `${chassis}|${legs}|${color}`;
+    built = keyOf(live.current);
   };
   rebuild();
 
@@ -180,8 +186,7 @@ export function mountMachine(
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const view = live.current;
-    const keyNow = `${view.chassis}|${view.legs}|${view.color}`;
-    if (keyNow !== built) {
+    if (keyOf(view) !== built) {
       rebuild();
       reset();
     }
@@ -189,17 +194,18 @@ export function mountMachine(
     if (!view.testing && wasTesting) reset();
     wasTesting = view.testing;
 
-    step(sim, dt, view.chassis, view.testing, has);
+    const mode = modeOf(view);
+    step(sim, dt, mode, view.chassis === "heli" ? 22 : 28, view.testing, has);
     holder.scale.setScalar(view.scale);
     holder.position.set(sim.x, sim.y, sim.z);
     holder.rotation.order = "YXZ";
     holder.rotation.y = sim.yaw;
     holder.rotation.x = sim.pitch;
     holder.rotation.z = sim.roll;
-    rig?.tick(sim.phase, sim.speed);
+    rig?.tick(sim.phase, mode === "fixed" ? sim.active : sim.speed);
 
-    const dist = view.chassis === "plane" ? 5.4 : view.chassis === "humanoid" ? 4.2 : 3.8;
-    const height = view.chassis === "humanoid" ? 1.7 : 1.5;
+    const dist = rig?.frame?.dist ?? (view.chassis === "plane" ? 5.4 : view.chassis === "humanoid" ? 4.2 : 3.8);
+    const height = rig?.frame?.height ?? (view.chassis === "humanoid" ? 1.7 : 1.5);
     if (!view.testing) {
       orbit += dt * 0.28;
       camera.position.set(Math.sin(orbit) * dist, height + 0.4, Math.cos(orbit) * dist);
@@ -244,10 +250,18 @@ export function mountMachine(
   };
 }
 
+function modeOf(view: Live): Motion {
+  if (view.design) return view.design.motion;
+  if (view.chassis === "plane") return "plane";
+  if (view.chassis === "drone" || view.chassis === "heli") return "hover";
+  return "ground";
+}
+
 function step(
   sim: Sim,
   dt: number,
-  chassis: ChassisId,
+  mode: Motion,
+  rotorRate: number,
   testing: boolean,
   has: (code: string) => boolean,
 ) {
@@ -266,7 +280,18 @@ function step(
   const up = has("Space");
   const down = has("KeyC") || has("ShiftLeft") || has("ShiftRight");
 
-  if (chassis === "plane") {
+  if (mode === "fixed") {
+    // Stays put. A and D turn the base; any held key runs the joints.
+    const steer = (a ? 1 : 0) - (d ? 1 : 0);
+    sim.yaw += steer * 1.4 * dt;
+    const busy = w || s || a || d || up || down;
+    sim.active += ((busy ? 1 : 0) - sim.active) * Math.min(1, dt * 4);
+    sim.speed = 0;
+    sim.phase += dt * (0.8 + sim.active * 2.6) * (s && !w ? -1 : 1);
+    return;
+  }
+
+  if (mode === "plane") {
     const rollCmd = (a ? 1 : 0) - (d ? 1 : 0);
     if (rollCmd !== 0) sim.roll += rollCmd * 2.6 * dt;
     else sim.roll *= Math.exp(-2.4 * dt);
@@ -290,7 +315,7 @@ function step(
     return;
   }
 
-  if (chassis === "drone" || chassis === "heli") {
+  if (mode === "hover") {
     const yawCmd = (a ? 1 : 0) - (d ? 1 : 0);
     sim.yaw += yawCmd * 1.9 * dt;
     const fwd = (w ? 1 : 0) - (s ? 1 : 0);
@@ -305,7 +330,7 @@ function step(
     sim.x += fx * sim.speed * dt;
     sim.z += fz * sim.speed * dt;
     sim.y = Math.max(0, sim.y + sim.climb * dt);
-    sim.phase += dt * (chassis === "heli" ? 22 : 28);
+    sim.phase += dt * rotorRate;
     return;
   }
 
@@ -335,15 +360,15 @@ function buildRig(chassis: ChassisId, legs: 6 | 8, color: string): Rig {
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
   const body = new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.08 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1a1814, roughness: 0.72, metalness: 0.15 });
-  const amber = new THREE.MeshStandardMaterial({
-    color: 0xe8a317,
+  const dark = new THREE.MeshStandardMaterial({ color: 0x141a36, roughness: 0.72, metalness: 0.15 });
+  const accent = new THREE.MeshStandardMaterial({
+    color: 0x26e7ff,
     roughness: 0.35,
     metalness: 0.2,
-    emissive: 0x3a2804,
+    emissive: 0x06424c,
     emissiveIntensity: 0.4,
   });
-  mats.push(body, dark, amber);
+  mats.push(body, dark, accent);
 
   const box = (
     parent: THREE.Object3D,
@@ -382,11 +407,11 @@ function buildRig(chassis: ChassisId, legs: 6 | 8, color: string): Rig {
   const root = new THREE.Group();
   let tick: (phase: number, speed: number) => void = () => {};
 
-  if (chassis === "plane") tick = plane(root, box, cyl, body, dark, amber);
-  else if (chassis === "drone") tick = drone(root, box, cyl, body, dark, amber);
-  else if (chassis === "heli") tick = heli(root, box, cyl, body, dark, amber);
-  else if (chassis === "spider") tick = spider(root, box, cyl, body, dark, amber, legs);
-  else tick = humanoid(root, box, cyl, body, dark, amber);
+  if (chassis === "plane") tick = plane(root, box, cyl, body, dark, accent);
+  else if (chassis === "drone") tick = drone(root, box, cyl, body, dark, accent);
+  else if (chassis === "heli") tick = heli(root, box, cyl, body, dark, accent);
+  else if (chassis === "spider") tick = spider(root, box, cyl, body, dark, accent, legs);
+  else tick = humanoid(root, box, cyl, body, dark, accent);
 
   return {
     root,
@@ -404,7 +429,7 @@ function plane(
   cyl: Cyler,
   body: THREE.Material,
   dark: THREE.Material,
-  amber: THREE.Material,
+  accent: THREE.Material,
 ) {
   box(root, 0.22, 0.16, 1.05, body, 0, 0.2, 0.02);
   const nose = cyl(root, 0.09, 0.28, body, 0, 0.2, -0.62);
@@ -416,8 +441,8 @@ function plane(
   const prop = new THREE.Group();
   prop.position.set(0, 0.2, -0.78);
   root.add(prop);
-  box(prop, 0.06, 0.62, 0.02, amber, 0, 0, 0);
-  box(prop, 0.62, 0.06, 0.02, amber, 0, 0, 0);
+  box(prop, 0.06, 0.62, 0.02, accent, 0, 0, 0);
+  box(prop, 0.62, 0.06, 0.02, accent, 0, 0, 0);
   cyl(prop, 0.04, 0.05, dark, 0, 0, 0);
   return (phase: number) => {
     prop.rotation.z = phase;
@@ -430,10 +455,10 @@ function drone(
   cyl: Cyler,
   body: THREE.Material,
   dark: THREE.Material,
-  amber: THREE.Material,
+  accent: THREE.Material,
 ) {
   box(root, 0.34, 0.1, 0.34, body, 0, 0.28, 0);
-  box(root, 0.12, 0.06, 0.12, amber, 0, 0.36, -0.04);
+  box(root, 0.12, 0.06, 0.12, accent, 0, 0.36, -0.04);
   const props: THREE.Object3D[] = [];
   const spots: [number, number][] = [
     [-0.34, -0.34],
@@ -450,7 +475,7 @@ function drone(
     const prop = new THREE.Group();
     prop.position.set(x, 0.4, z);
     root.add(prop);
-    box(prop, 0.42, 0.012, 0.05, amber, 0, 0, 0);
+    box(prop, 0.42, 0.012, 0.05, accent, 0, 0, 0);
     props.push(prop);
   }
   box(root, 0.04, 0.16, 0.28, dark, -0.12, 0.08, 0);
@@ -468,21 +493,21 @@ function heli(
   cyl: Cyler,
   body: THREE.Material,
   dark: THREE.Material,
-  amber: THREE.Material,
+  accent: THREE.Material,
 ) {
   box(root, 0.28, 0.24, 0.55, body, 0, 0.36, -0.05);
-  box(root, 0.16, 0.1, 0.16, amber, 0, 0.4, -0.22);
+  box(root, 0.16, 0.1, 0.16, accent, 0, 0.4, -0.22);
   box(root, 0.07, 0.07, 0.85, dark, 0, 0.4, 0.5);
   cyl(root, 0.04, 0.16, dark, 0, 0.52, -0.02);
   const main = new THREE.Group();
   main.position.set(0, 0.62, -0.02);
   root.add(main);
-  box(main, 1.7, 0.02, 0.08, amber, 0, 0, 0);
-  box(main, 0.08, 0.02, 1.7, amber, 0, 0, 0);
+  box(main, 1.7, 0.02, 0.08, accent, 0, 0, 0);
+  box(main, 0.08, 0.02, 1.7, accent, 0, 0, 0);
   const tail = new THREE.Group();
   tail.position.set(0.08, 0.42, 0.92);
   root.add(tail);
-  box(tail, 0.02, 0.28, 0.05, amber, 0, 0, 0);
+  box(tail, 0.02, 0.28, 0.05, accent, 0, 0, 0);
   box(root, 0.04, 0.2, 0.5, dark, -0.12, 0.1, -0.02);
   box(root, 0.04, 0.2, 0.5, dark, 0.12, 0.1, -0.02);
   box(root, 0.22, 0.02, 0.16, dark, 0, 0.42, 0.9);
@@ -498,12 +523,12 @@ function spider(
   cyl: Cyler,
   body: THREE.Material,
   dark: THREE.Material,
-  amber: THREE.Material,
+  accent: THREE.Material,
   legs: number,
 ) {
   const belly = cyl(root, 0.2, 0.16, body, 0, 0.32, 0.08);
   belly.scale.set(1.15, 1, 1.45);
-  box(root, 0.16, 0.1, 0.16, amber, 0, 0.36, -0.22);
+  box(root, 0.16, 0.1, 0.16, accent, 0, 0.36, -0.22);
   const joints: { hip: THREE.Group; base: number; femur: THREE.Object3D }[] = [];
   for (let i = 0; i < legs; i++) {
     const ang = (i / legs) * Math.PI * 2;
@@ -543,7 +568,7 @@ function humanoid(
   cyl: Cyler,
   body: THREE.Material,
   dark: THREE.Material,
-  amber: THREE.Material,
+  accent: THREE.Material,
 ) {
   const hip = new THREE.Group();
   hip.position.y = 0.8;
@@ -551,7 +576,7 @@ function humanoid(
   box(hip, 0.28, 0.16, 0.16, dark, 0, 0, 0);
   box(hip, 0.32, 0.42, 0.18, body, 0, 0.3, 0);
   const head = cyl(hip, 0.11, 0.16, body, 0, 0.62, 0);
-  box(head, 0.1, 0.04, 0.02, amber, 0, 0.02, -0.1);
+  box(head, 0.1, 0.04, 0.02, accent, 0, 0.02, -0.1);
 
   const limb = (x: number, upper: number, lower: number, foot: boolean) => {
     const joint = new THREE.Group();
@@ -587,6 +612,71 @@ function humanoid(
     if (moving < 0.2) {
       hip.rotation.y = Math.sin(phase) * 0.04;
     } else hip.rotation.y = 0;
+  };
+}
+
+function buildCustom(design: CustomDesign, color: string): Rig {
+  const geos: THREE.BufferGeometry[] = [];
+  const mats = {
+    body: new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.08 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x141a36, roughness: 0.72, metalness: 0.15 }),
+    accent: new THREE.MeshStandardMaterial({
+      color: 0x26e7ff,
+      roughness: 0.35,
+      metalness: 0.2,
+      emissive: 0x06424c,
+      emissiveIntensity: 0.4,
+    }),
+  };
+  const deg = Math.PI / 180;
+  const root = new THREE.Group();
+  const moving: { g: THREE.Group; kind: string; axis: "x" | "y" | "z" }[] = [];
+  let low = Infinity;
+  let reach = 0.4;
+
+  for (const p of design.parts) {
+    const geo =
+      p.shape === "box"
+        ? new THREE.BoxGeometry(p.size.x, p.size.y, p.size.z)
+        : p.shape === "cylinder"
+          ? new THREE.CylinderGeometry(p.size.x / 2, p.size.x / 2, p.size.y, 20)
+          : new THREE.SphereGeometry(p.size.x / 2, 20, 14);
+    geos.push(geo);
+    const mesh = new THREE.Mesh(geo, mats[p.finish]);
+    const pivot = new THREE.Group();
+    pivot.position.set(p.pivot.x, p.pivot.y, p.pivot.z);
+    mesh.position.set(p.pos.x - p.pivot.x, p.pos.y - p.pivot.y, p.pos.z - p.pivot.z);
+    mesh.rotation.set(p.rot.x * deg, p.rot.y * deg, p.rot.z * deg);
+    pivot.add(mesh);
+    root.add(pivot);
+    if (p.animate !== "none") moving.push({ g: pivot, kind: p.animate, axis: p.axis });
+
+    const tilted = Math.abs(p.rot.x) > 1 || Math.abs(p.rot.z) > 1;
+    const half = tilted || p.shape === "sphere" ? Math.max(p.size.x, p.size.y, p.size.z) / 2 : p.size.y / 2;
+    low = Math.min(low, p.pos.y - half);
+    reach = Math.max(reach, Math.hypot(p.pos.x, p.pos.z) + Math.max(p.size.x, p.size.z) / 2, p.pos.y + half);
+  }
+  // Rest the lowest point on the floor whatever height Claude drew it at.
+  if (Number.isFinite(low)) root.position.y = -low;
+
+  return {
+    root,
+    frame: { dist: clamp(reach * 3.4, 3.2, 8), height: clamp(reach * 1.5, 1.2, 3) },
+    tick: (phase, speed) => {
+      const amt = Math.max(0.15, Math.min(1, Math.abs(speed) / 0.35));
+      for (const m of moving) {
+        let angle = 0;
+        if (m.kind === "spin") angle = phase;
+        else if (m.kind === "wheel") angle = -phase;
+        else if (m.kind === "swing") angle = Math.sin(phase) * 0.6 * amt;
+        else angle = -Math.sin(phase) * 0.6 * amt;
+        m.g.rotation[m.axis] = angle;
+      }
+    },
+    dispose: () => {
+      geos.forEach((g) => g.dispose());
+      Object.values(mats).forEach((m) => m.dispose());
+    },
   };
 }
 

@@ -2,24 +2,24 @@ import { useState } from "react";
 import { Copy, Download } from "lucide-react";
 import { makeSketch, SKETCHES, type SketchId } from "@/lib/code/sketches";
 import { downloadBlob, slug } from "@/lib/aero/stl";
-import { useLab } from "@/lib/lab-store";
-import { sketchesFor } from "@/lib/robots/chassis";
-import { buildPlan } from "@/lib/wire/plan";
+import { useActiveDesign, useBenchPlan, useLab } from "@/lib/lab-store";
+import { designSketches } from "@/lib/robots/design";
+import { chassisById, sketchesFor } from "@/lib/robots/chassis";
 import { Seg } from "./fields";
 
 export function CodeBench() {
   const projectName = useLab((s) => s.projectName);
-  const mcu = useLab((s) => s.mcu);
-  const picked = useLab((s) => s.picked);
   const sketch = useLab((s) => s.sketch);
   const notes = useLab((s) => s.notes);
   const setSketch = useLab((s) => s.setSketch);
   const setNotes = useLab((s) => s.setNotes);
   const [copied, setCopied] = useState(false);
   const chassis = useLab((s) => s.chassis);
-  const plan = buildPlan(mcu, picked, chassis);
-  const file = makeSketch(sketch, projectName, plan, chassis);
-  const choices = SKETCHES.filter((s) => sketchesFor(chassis).includes(s.id));
+  const design = useActiveDesign();
+  const plan = useBenchPlan();
+  const file = makeSketch(sketch, projectName, plan, design ? design.name : chassisById(chassis).name);
+  const offered = design ? designSketches(design) : sketchesFor(chassis);
+  const choices = SKETCHES.filter((s) => offered.includes(s.id));
   const faults = plan.issues.filter((i) => i.level === "fault").length;
 
   const copy = async () => {
@@ -66,7 +66,7 @@ export function CodeBench() {
           <button
             type="button"
             onClick={save}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-amber px-3 text-sm font-medium text-ink"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-cyan px-3 text-sm font-medium text-ink"
           >
             <Download className="size-4" aria-hidden />
             {file.filename}

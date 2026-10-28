@@ -1,4 +1,3 @@
-import type { ChassisId } from "../robots/chassis";
 import { mcuName, type McuId } from "../wire/catalog";
 import type { Plan } from "../wire/plan";
 
@@ -46,7 +45,7 @@ export function makeSketch(
   kind: SketchId,
   project: string,
   plan: Plan,
-  chassis: ChassisId = "plane",
+  chassis: string = "plane",
 ): { filename: string; code: string } {
   const slug = project
     .toLowerCase()

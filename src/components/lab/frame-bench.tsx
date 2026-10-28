@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { chassisById } from "@/lib/robots/chassis";
-import { useLab } from "@/lib/lab-store";
+import { useActiveDesign, useLab } from "@/lib/lab-store";
 import { NumField, Seg } from "./fields";
 
 const FILAMENT: Record<string, string> = {
@@ -19,6 +19,7 @@ export function FrameBench() {
   const picked = useLab((s) => s.picked);
   const setScale = useLab((s) => s.setScale);
   const setLegs = useLab((s) => s.setLegs);
+  const design = useActiveDesign();
   const [testing, setTesting] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -30,6 +31,7 @@ export function FrameBench() {
     scale,
     testing,
     project,
+    design,
   });
   live.current = {
     chassis,
@@ -38,6 +40,7 @@ export function FrameBench() {
     scale,
     testing,
     project,
+    design,
   };
 
   useEffect(() => {
@@ -59,7 +62,15 @@ export function FrameBench() {
 
   const spec = chassisById(chassis);
   const servos = (picked.sg90 ?? 0) + (picked.mg996 ?? 0);
-  const flyer = chassis === "plane" || chassis === "drone" || chassis === "heli";
+  const motion = design
+    ? design.motion
+    : chassis === "plane"
+      ? "plane"
+      : chassis === "drone" || chassis === "heli"
+        ? "hover"
+        : "ground";
+  const flyer = motion === "plane" || motion === "hover";
+  const isPlane = motion === "plane";
 
   const hold = (code: string, on: boolean) => {
     window.dispatchEvent(new CustomEvent("robot-bay-key", { detail: { code, on } }));
@@ -69,12 +80,12 @@ export function FrameBench() {
     <div className="grid gap-4 md:grid-cols-[22rem_minmax(0,1fr)]">
       <section className="order-2 min-w-0 rounded-md border border-line bg-panel p-4 md:order-1">
         <p className="font-mono text-xs tracking-widest text-dust">FRAME</p>
-        <p className="mt-2 text-sm text-dust">{spec.blurb}</p>
+        <p className="mt-2 text-sm text-dust">{design ? design.blurb : spec.blurb}</p>
         <p className="mt-2 text-sm text-dust">
           This bay is the assembled machine. Printable files are on Print — one STL at a time, then the slicer.
         </p>
         <NumField label="Size" unit="%" value={Math.round(scale * 100)} min={75} max={140} step={1} onChange={(n) => setScale(n / 100)} />
-        {chassis === "spider" && (
+        {!design && chassis === "spider" && (
           <>
             <p className="mt-3 text-sm">Legs</p>
             <div className="mt-1">
@@ -95,8 +106,8 @@ export function FrameBench() {
             )}
           </>
         )}
-        <p className="mt-3 text-sm">{spec.drive}</p>
-        <p ref={hudRef} className="mt-3 font-mono text-xs text-amber">
+        <p className="mt-3 text-sm">{design ? design.controls : spec.drive}</p>
+        <p ref={hudRef} className="mt-3 font-mono text-xs text-cyan">
           {project} · bay
         </p>
       </section>
@@ -107,7 +118,7 @@ export function FrameBench() {
         <button
           type="button"
           onClick={() => setTesting((v) => !v)}
-          className={`absolute top-3 right-3 min-h-11 rounded-md px-4 text-sm font-medium ${testing ? "border border-line bg-hangar text-paper" : "bg-amber text-ink"}`}
+          className={`absolute top-3 right-3 min-h-11 rounded-md px-4 text-sm font-medium ${testing ? "border border-line bg-hangar text-paper" : "bg-cyan text-ink"}`}
         >
           {testing ? "Stop" : "Start"}
         </button>
@@ -115,16 +126,16 @@ export function FrameBench() {
           <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 bg-hangar/80 p-3 backdrop-blur-sm">
             <div className="grid grid-cols-3 gap-2">
               <span />
-              <Pad label={chassis === "plane" ? "Nose up" : "Forward"} code="KeyW" hold={hold} />
+              <Pad label={isPlane ? "Nose up" : motion === "fixed" ? "Run" : "Forward"} code="KeyW" hold={hold} />
               <span />
-              <Pad label={chassis === "plane" ? "Bank L" : "Left"} code="KeyA" hold={hold} />
-              <Pad label={chassis === "plane" ? "Nose dn" : "Back"} code="KeyS" hold={hold} />
-              <Pad label={chassis === "plane" ? "Bank R" : "Right"} code="KeyD" hold={hold} />
+              <Pad label={isPlane ? "Bank L" : motion === "fixed" ? "Turn L" : "Left"} code="KeyA" hold={hold} />
+              <Pad label={isPlane ? "Nose dn" : motion === "fixed" ? "Reverse" : "Back"} code="KeyS" hold={hold} />
+              <Pad label={isPlane ? "Bank R" : motion === "fixed" ? "Turn R" : "Right"} code="KeyD" hold={hold} />
             </div>
             {flyer && (
               <div className="grid grid-cols-2 gap-2">
-                <Pad label={chassis === "plane" ? "Throttle" : "Climb"} code="Space" hold={hold} />
-                <Pad label={chassis === "plane" ? "Idle" : "Descend"} code="KeyC" hold={hold} />
+                <Pad label={isPlane ? "Throttle" : "Climb"} code="Space" hold={hold} />
+                <Pad label={isPlane ? "Idle" : "Descend"} code="KeyC" hold={hold} />
               </div>
             )}
           </div>

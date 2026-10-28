@@ -1,12 +1,12 @@
 import { Minus, Plus } from "lucide-react";
 import { DEVICES, GROUPS, MCUS, type DeviceId, type McuId } from "@/lib/wire/catalog";
-import { buildPlan, countOf, type WireKind } from "@/lib/wire/plan";
-import { useLab } from "@/lib/lab-store";
+import { countOf, type WireKind } from "@/lib/wire/plan";
+import { useBenchPlan, useLab } from "@/lib/lab-store";
 
 const KIND: Record<WireKind, string> = {
-  power: "bg-rust",
+  power: "bg-magenta",
   ground: "bg-dust",
-  signal: "bg-amber",
+  signal: "bg-cyan",
   i2c: "bg-paper",
   uart: "bg-paper",
 };
@@ -16,8 +16,7 @@ export function WireBench() {
   const picked = useLab((s) => s.picked);
   const setMcu = useLab((s) => s.setMcu);
   const setDevice = useLab((s) => s.setDevice);
-  const chassis = useLab((s) => s.chassis);
-  const plan = buildPlan(mcu, picked, chassis);
+  const plan = useBenchPlan();
   const faults = plan.issues.filter((i) => i.level === "fault");
   const cautions = plan.issues.filter((i) => i.level === "caution");
 
@@ -33,7 +32,7 @@ export function WireBench() {
                 key={m.id}
                 type="button"
                 onClick={() => setMcu(m.id)}
-                className={`min-h-11 rounded-md border px-3 py-2 text-left ${on ? "border-amber bg-raised" : "border-line"}`}
+                className={`min-h-11 rounded-md border px-3 py-2 text-left ${on ? "border-cyan bg-raised" : "border-line"}`}
               >
                 <span className="block text-sm">{m.name}</span>
                 <span className="block text-xs text-dust">{m.blurb}</span>
@@ -71,13 +70,13 @@ export function WireBench() {
           </p>
           <ul className="mt-3 grid gap-2">
             {faults.map((issue) => (
-              <li key={issue.title} className="rounded-md border border-line border-l-4 border-l-rust px-3 py-2">
+              <li key={issue.title} className="rounded-md border border-line border-l-4 border-l-magenta px-3 py-2">
                 <p className="text-sm font-medium">{issue.title}</p>
                 <p className="text-sm text-dust">{issue.detail}</p>
               </li>
             ))}
             {cautions.map((issue) => (
-              <li key={issue.title} className="rounded-md border border-line border-l-4 border-l-amber px-3 py-2">
+              <li key={issue.title} className="rounded-md border border-line border-l-4 border-l-cyan px-3 py-2">
                 <p className="text-sm font-medium">{issue.title}</p>
                 <p className="text-sm text-dust">{issue.detail}</p>
               </li>
@@ -97,7 +96,7 @@ export function WireBench() {
                 </p>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-hangar">
-                <div className={`h-full ${hot ? "bg-rust" : "bg-amber"}`} style={{ width: `${Math.max(pct, 4)}%` }} />
+                <div className={`h-full ${hot ? "bg-magenta" : "bg-cyan"}`} style={{ width: `${Math.max(pct, 4)}%` }} />
               </div>
             </section>
           );
@@ -111,7 +110,7 @@ export function WireBench() {
             <ul>
               {plan.pins.map((pin) => (
                 <li key={`${pin.pin}-${pin.goesTo}`} className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0">
-                  <span className="font-mono text-sm text-amber">{pin.pin}</span>
+                  <span className="font-mono text-sm text-cyan">{pin.pin}</span>
                   <span className="text-right text-sm">{pin.goesTo}</span>
                 </li>
               ))}
@@ -166,7 +165,7 @@ function DeviceRow({
           <button
             type="button"
             onClick={() => onChange(count > 0 ? 0 : 1)}
-            className={`min-h-11 shrink-0 rounded-md border px-3 text-sm ${count > 0 ? "border-amber text-amber" : "border-line text-dust"}`}
+            className={`min-h-11 shrink-0 rounded-md border px-3 text-sm ${count > 0 ? "border-cyan text-cyan" : "border-line text-dust"}`}
           >
             {count > 0 ? "On" : "Off"}
           </button>

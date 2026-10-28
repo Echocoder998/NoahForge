@@ -36,7 +36,7 @@ export function NumField({
               const n = Number(e.target.value);
               if (Number.isFinite(n)) onChange(clamp(n, min, max));
             }}
-            className="w-16 bg-transparent text-right text-amber outline-none"
+            className="w-16 bg-transparent text-right text-cyan outline-none"
             aria-label={label}
           />
           <span className="text-xs text-dust">{unit}</span>
@@ -76,7 +76,7 @@ export function Seg({
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            className={`min-h-11 rounded-md px-2 text-sm ${on ? "bg-paper text-ink" : "text-dust"}`}
+            className={`min-h-11 rounded-md px-2 text-sm ${on ? "bg-raised text-cyan text-glow" : "text-dust hover:text-paper"}`}
           >
             {opt.label}
           </button>

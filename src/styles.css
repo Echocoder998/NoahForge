@@ -1,18 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cinzel", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --color-hangar: #12110e;
-  --color-panel: #1c1a16;
-  --color-raised: #26231d;
-  --color-paper: #f3ecdf;
-  --color-dust: #a79b88;
-  --color-line: #3a342b;
-  --color-amber: #e8a317;
-  --color-ink: #1a1408;
-  --color-rust: #d85a3a;
+  --color-void: #070913;
+  --color-hangar: #0a0e1f;
+  --color-panel: rgb(12 16 34 / 0.78);
+  --color-raised: #141b3a;
+  --color-paper: #f5f8ff;
+  --color-dust: #b7c4dd;
+  --color-line: rgb(106 233 255 / 0.22);
+  --color-cyan: #26e7ff;
+  --color-blue: #2f6dff;
+  --color-violet: #a855ff;
+  --color-magenta: #ff5df4;
+  --color-mint: #24f7ca;
+  --color-ink: #050714;
   --color-pla-natural: #e4d2ae;
   --color-pla-black: #2c2c2a;
   --color-pla-orange: #e25b1a;
@@ -31,10 +36,38 @@
 
   body {
     margin: 0;
-    background: var(--color-hangar);
+    min-height: 100dvh;
+    overflow-x: hidden;
+    background:
+      radial-gradient(circle at 78% 8%, rgb(47 109 255 / 0.24), transparent 26rem),
+      radial-gradient(circle at 95% 55%, rgb(255 93 244 / 0.14), transparent 22rem),
+      radial-gradient(circle at 10% 85%, rgb(36 247 202 / 0.1), transparent 20rem),
+      var(--color-void);
+    background-attachment: fixed;
     color: var(--color-paper);
     font-family: var(--font-sans);
     line-height: 1.5;
+  }
+
+  /* Faint drifting grid, fading out toward the bottom. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgb(38 231 255 / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(38 231 255 / 0.05) 1px, transparent 1px);
+    background-size: 74px 74px;
+    mask-image: linear-gradient(to bottom, rgb(0 0 0 / 0.9), transparent 75%);
+    animation: grid-drift 18s linear infinite;
+  }
+
+  @keyframes grid-drift {
+    to {
+      background-position: 74px 74px;
+    }
   }
 
   button:not(:disabled),
@@ -44,12 +77,12 @@
 
   input[type="range"] {
     height: 1.75rem;
-    accent-color: var(--color-amber);
+    accent-color: var(--color-cyan);
     cursor: pointer;
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-amber);
+    outline: 2px solid var(--color-cyan);
     outline-offset: 2px;
   }
 
@@ -68,6 +101,37 @@
     *::before,
     *::after {
       transition: none !important;
+      animation: none !important;
     }
+  }
+}
+
+@layer components {
+  /* Glassy panel with a cyan hairline, like the reference site's cards. */
+  .bg-panel {
+    backdrop-filter: blur(14px);
+  }
+
+  /* Primary accent fills get the cyan→blue sweep and glow. */
+  .bg-cyan {
+    background-image: linear-gradient(100deg, var(--color-cyan), var(--color-blue) 70%, var(--color-violet));
+    box-shadow: 0 0 22px rgb(38 231 255 / 0.35);
+  }
+
+  .border-cyan {
+    box-shadow:
+      0 0 18px rgb(38 231 255 / 0.22),
+      inset 0 0 18px rgb(38 231 255 / 0.06);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 16px rgb(38 231 255 / 0.55);
+  }
+
+  .text-gradient {
+    background: linear-gradient(90deg, #f6fbff 0%, #7bdfff 35%, #4778ff 62%, #ff68f6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
 }

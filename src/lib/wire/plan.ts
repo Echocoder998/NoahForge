@@ -32,7 +32,9 @@ export function countOf(counts: Counts, id: DeviceId): number {
   return Math.max(0, counts[id] ?? 0);
 }
 
-export function buildPlan(mcu: McuId, raw: Counts, chassis: ChassisId = "plane"): Plan {
+export type PartNames = { servos?: string[]; motors?: string[] };
+
+export function buildPlan(mcu: McuId, raw: Counts, chassis: ChassisId = "plane", names?: PartNames): Plan {
   const n = (id: DeviceId) => countOf(raw, id);
   const issues: Issue[] = [];
   const wires: Wire[] = [];
@@ -227,7 +229,7 @@ export function buildPlan(mcu: McuId, raw: Counts, chassis: ChassisId = "plane")
       });
       break;
     }
-    escs.push({ name: escLabel(chassis, i), pin });
+    escs.push({ name: names?.motors?.[i] ?? escLabel(chassis, i), pin });
   }
 
   const servos: { name: string; pin: string }[] = [];
@@ -241,7 +243,7 @@ export function buildPlan(mcu: McuId, raw: Counts, chassis: ChassisId = "plane")
       });
       break;
     }
-    servos.push({ name: servoLabel(chassis, i), pin });
+    servos.push({ name: names?.servos?.[i] ?? servoLabel(chassis, i), pin });
   }
 
   let drv: Plan["drv"] = null;

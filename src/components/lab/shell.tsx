@@ -1,13 +1,15 @@
 import { useEffect } from "react";
-import { Bug, Fan, PersonStanding, Plane, Radar } from "lucide-react";
+import { Bug, Fan, PersonStanding, Plane, Radar, Sparkles } from "lucide-react";
 import { useLab, type Bench } from "@/lib/lab-store";
 import { CHASSIS, type ChassisId } from "@/lib/robots/chassis";
 import { CodeBench } from "./code-bench";
+import { DesignBench } from "./design-bench";
 import { FrameBench } from "./frame-bench";
 import { PrintBench } from "./print-bench";
 import { WireBench } from "./wire-bench";
 
 const BENCHES: { id: Bench; label: string }[] = [
+  { id: "design", label: "Design" },
   { id: "frame", label: "Frame" },
   { id: "print", label: "Print" },
   { id: "wire", label: "Wire" },
@@ -29,32 +31,28 @@ export function Lab() {
   const setBench = useLab((s) => s.setBench);
   const setProjectName = useLab((s) => s.setProjectName);
   const setChassis = useLab((s) => s.setChassis);
+  const customs = useLab((s) => s.customs);
+  const customId = useLab((s) => s.customId);
+  const activateDesign = useLab((s) => s.activateDesign);
 
   useEffect(() => {
     void useLab.persist.rehydrate();
   }, []);
 
   return (
-    <div className="min-h-dvh bg-hangar text-paper">
-      <header className="border-b border-line">
+    <div className="min-h-dvh text-paper">
+      <header className="sticky top-0 z-20 border-b border-line bg-ink/75 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-md bg-amber font-mono text-sm font-medium text-ink">
+            <span className="flex size-11 items-center justify-center rounded-md bg-cyan font-display text-base font-bold text-ink">
               NF
             </span>
             <div>
-              <p className="font-mono text-xs tracking-widest text-amber">PRINT · WIRE · FLASH</p>
-              <h1 className="text-xl font-medium tracking-tight">Noah Forge</h1>
-              <a
-                href="/noah-forge-source.zip"
-                download="noah-forge-source.zip"
-                className="mt-1 inline-flex min-h-11 items-center text-sm text-amber underline underline-offset-2"
-              >
-                Download source
-              </a>
+              <h1 className="font-display text-xl font-semibold leading-none">Noah Forge</h1>
+              <p className="mt-1.5 text-[0.68rem] font-bold tracking-[0.32em] text-cyan text-glow">PRINT · WIRE · FLASH</p>
             </div>
           </div>
-          <nav className="grid grid-cols-4 gap-1 rounded-md bg-panel p-1" aria-label="Benches">
+          <nav className="grid grid-cols-5 gap-1 rounded-md border border-line bg-panel p-1" aria-label="Benches">
             {BENCHES.map((item) => {
               const on = item.id === bench;
               return (
@@ -62,7 +60,7 @@ export function Lab() {
                   key={item.id}
                   type="button"
                   onClick={() => setBench(item.id)}
-                  className={`min-h-11 rounded-md px-2 text-sm ${on ? "bg-paper text-ink" : "text-dust"}`}
+                  className={`min-h-11 rounded-md px-2 text-sm font-semibold transition-colors ${on ? "bg-raised text-cyan text-glow" : "text-dust hover:text-paper"}`}
                 >
                   {item.label}
                 </button>
@@ -74,7 +72,7 @@ export function Lab() {
       <main className="mx-auto max-w-6xl px-4 py-4">
         <div className="mb-4 flex flex-col gap-3">
           <label className="block min-w-0">
-            <span className="font-mono text-xs tracking-widest text-dust">PROJECT</span>
+            <span className="text-xs font-bold tracking-[0.18em] text-mint">PROJECT</span>
             <input
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
@@ -84,22 +82,37 @@ export function Lab() {
           </label>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Chassis">
             {CHASSIS.map((item) => {
-              const on = item.id === chassis;
+              const on = !customId && item.id === chassis;
               const Icon = ICONS[item.id];
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setChassis(item.id)}
-                  className={`inline-flex min-h-11 min-w-28 flex-1 items-center justify-center gap-2 rounded-md border px-3 text-sm ${on ? "border-amber bg-raised text-paper" : "border-line text-dust"}`}
+                  className={`inline-flex min-h-11 min-w-28 flex-1 items-center justify-center gap-2 rounded-md border px-3 text-sm ${on ? "border-cyan bg-raised text-paper" : "border-line text-dust"}`}
                 >
                   <Icon className="size-4" aria-hidden />
                   {item.name}
                 </button>
               );
             })}
+            {customs.map((d) => {
+              const on = d.id === customId;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => activateDesign(d.id)}
+                  className={`inline-flex min-h-11 min-w-28 flex-1 items-center justify-center gap-2 rounded-md border px-3 text-sm ${on ? "border-cyan bg-raised text-paper" : "border-line text-dust"}`}
+                >
+                  <Sparkles className="size-4 text-mint" aria-hidden />
+                  <span className="max-w-40 truncate">{d.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
+        {bench === "design" && <DesignBench />}
         {bench === "frame" && <FrameBench />}
         {bench === "print" && <PrintBench />}
         {bench === "wire" && <WireBench />}

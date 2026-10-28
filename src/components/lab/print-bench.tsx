@@ -3,7 +3,7 @@ import { Download } from "lucide-react";
 import { meshSize, signedVolume } from "@/lib/aero/mesh";
 import { nacaLabel, partMesh, partRings, type PartKind } from "@/lib/aero/parts";
 import { downloadBlob, meshToStl, slug } from "@/lib/aero/stl";
-import { useLab, type Filament } from "@/lib/lab-store";
+import { useActiveDesign, useLab, type Filament } from "@/lib/lab-store";
 import { chassisById } from "@/lib/robots/chassis";
 import { NumField, Seg } from "./fields";
 import { Viewport } from "./viewport";
@@ -47,7 +47,9 @@ export function PrintBench() {
   const setSpan = useLab((s) => s.setSpan);
   const setMass = useLab((s) => s.setMass);
   const setSpeed = useLab((s) => s.setSpeed);
-  const chassisName = chassisById(useLab((s) => s.chassis)).name.toLowerCase();
+  const design = useActiveDesign();
+  const builtinName = chassisById(useLab((s) => s.chassis)).name;
+  const chassisName = (design ? design.name : builtinName).toLowerCase();
 
   const rings = useMemo(
     () => partRings(part, rib, motor, horn, plate, clip),
@@ -86,7 +88,7 @@ export function PrintBench() {
                 maxLength={4}
                 inputMode="numeric"
                 onChange={(e) => patchRib({ code: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                className="mt-1 w-full rounded-md border border-line bg-hangar px-3 py-3 font-mono text-amber outline-none"
+                className="mt-1 w-full rounded-md border border-line bg-hangar px-3 py-3 font-mono text-cyan outline-none"
               />
             </label>
             <p className="mt-1 text-xs text-dust">{nacaLabel(rib.code)}</p>
@@ -96,7 +98,7 @@ export function PrintBench() {
                   key={code}
                   type="button"
                   onClick={() => patchRib({ code })}
-                  className={`min-h-11 rounded-md border px-3 font-mono text-sm ${rib.code === code ? "border-amber text-amber" : "border-line text-dust"}`}
+                  className={`min-h-11 rounded-md border px-3 font-mono text-sm ${rib.code === code ? "border-cyan text-cyan" : "border-line text-dust"}`}
                 >
                   {code}
                 </button>
@@ -111,7 +113,7 @@ export function PrintBench() {
             <button
               type="button"
               onClick={() => patchRib({ lights: !rib.lights })}
-              className={`mt-3 min-h-11 w-full rounded-md border px-3 text-sm ${rib.lights ? "border-amber text-amber" : "border-line text-dust"}`}
+              className={`mt-3 min-h-11 w-full rounded-md border px-3 text-sm ${rib.lights ? "border-cyan text-cyan" : "border-line text-dust"}`}
             >
               Lightening holes {rib.lights ? "on" : "off"}
             </button>
@@ -160,7 +162,7 @@ export function PrintBench() {
             <button
               type="button"
               onClick={() => patchPlate({ slot: !plate.slot })}
-              className={`mt-3 min-h-11 w-full rounded-md border px-3 text-sm ${plate.slot ? "border-amber text-amber" : "border-line text-dust"}`}
+              className={`mt-3 min-h-11 w-full rounded-md border px-3 text-sm ${plate.slot ? "border-cyan text-cyan" : "border-line text-dust"}`}
             >
               Center slot {plate.slot ? "on" : "off"}
             </button>
@@ -187,7 +189,7 @@ export function PrintBench() {
               key={f.id}
               type="button"
               onClick={() => setFilament(f.id)}
-              className={`min-h-11 rounded-md border px-1 text-xs ${filament === f.id ? "border-amber text-paper" : "border-line text-dust"}`}
+              className={`min-h-11 rounded-md border px-1 text-xs ${filament === f.id ? "border-cyan text-paper" : "border-line text-dust"}`}
             >
               <span className={`mx-auto mb-1 block size-3 rounded-full border border-line ${f.swatch}`} />
               {f.label}
@@ -217,7 +219,7 @@ export function PrintBench() {
         {mesh.warnings.length > 0 && (
           <ul className="grid gap-2">
             {mesh.warnings.map((w) => (
-              <li key={w} className="rounded-md border border-line border-l-4 border-l-amber bg-panel px-3 py-2 text-sm">
+              <li key={w} className="rounded-md border border-line border-l-4 border-l-cyan bg-panel px-3 py-2 text-sm">
                 {w}
               </li>
             ))}
@@ -226,7 +228,7 @@ export function PrintBench() {
         <button
           type="button"
           onClick={save}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-amber px-4 text-sm font-medium text-ink"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-cyan px-4 text-sm font-medium text-ink"
         >
           <Download className="size-4" aria-hidden />
           Download STL
@@ -267,7 +269,7 @@ function Profile({ outer, holes }: { outer: [number, number][]; holes: [number, 
   const sw = Math.max(w, h) * 0.012;
   return (
     <svg viewBox={vb} className="mt-3 h-28 w-full rounded-md bg-hangar">
-      <path d={d(outer)} fill="var(--color-raised)" stroke="var(--color-amber)" strokeWidth={sw} />
+      <path d={d(outer)} fill="var(--color-raised)" stroke="var(--color-cyan)" strokeWidth={sw} />
       {holes.map((hole, i) => (
         <path key={i} d={d(hole)} fill="var(--color-hangar)" stroke="var(--color-dust)" strokeWidth={sw * 0.7} />
       ))}

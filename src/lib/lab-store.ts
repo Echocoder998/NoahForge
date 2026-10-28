@@ -15,11 +15,17 @@ import {
 } from "./aero/parts";
 import type { SketchId } from "./code/sketches";
 import { chassisById, type ChassisId } from "./robots/chassis";
+import type { CustomDesign } from "./robots/design";
 import type { DeviceId, McuId } from "./wire/catalog";
+import { buildPlan, type Plan } from "./wire/plan";
 
-export type Bench = "frame" | "print" | "wire" | "code";
+export type Bench = "design" | "frame" | "print" | "wire" | "code";
 export type Filament = "natural" | "black" | "orange" | "white";
 type Counts = Partial<Record<DeviceId, number>>;
+
+export type ChatTurn = { role: "user" | "assistant"; text: string; designId?: string; error?: boolean };
+
+const MAX_CHAT = 40;
 
 type Lab = {
   projectName: string;
@@ -41,6 +47,9 @@ type Lab = {
   picked: Counts;
   sketch: SketchId;
   notes: string;
+  customs: CustomDesign[];
+  customId: string | null;
+  chat: ChatTurn[];
   setProjectName: (name: string) => void;
   setBench: (bench: Bench) => void;
   setChassis: (id: ChassisId) => void;
@@ -60,7 +69,23 @@ type Lab = {
   setDevice: (id: DeviceId, count: number) => void;
   setSketch: (sketch: SketchId) => void;
   setNotes: (notes: string) => void;
+  saveDesign: (design: CustomDesign) => void;
+  activateDesign: (id: string) => void;
+  deleteDesign: (id: string) => void;
+  pushChat: (turn: ChatTurn) => void;
+  clearChat: () => void;
 };
+
+function designState(d: CustomDesign) {
+  return {
+    customId: d.id,
+    projectName: d.projectName,
+    part: d.printPart,
+    mcu: d.mcu,
+    picked: { ...d.picked },
+    sketch: d.sketch,
+  };
+}
 
 const starter = chassisById("plane");
 
@@ -86,11 +111,15 @@ export const useLab = create<Lab>()(
       picked: starter.picked,
       sketch: starter.sketch,
       notes: "",
+      customs: [],
+      customId: null,
+      chat: [],
       setProjectName: (projectName) => set({ projectName }),
       setBench: (bench) => set({ bench }),
       setChassis: (id) => {
         const next = chassisById(id);
         set({
+          customId: null,
           chassis: next.id,
           projectName: next.projectName,
           part: next.part,
@@ -129,6 +158,33 @@ export const useLab = create<Lab>()(
         }),
       setSketch: (sketch) => set({ sketch }),
       setNotes: (notes) => set({ notes }),
+      saveDesign: (design) =>
+        set((s) => ({
+          customs: [...s.customs.filter((d) => d.id !== design.id), design],
+          ...designState(design),
+        })),
+      activateDesign: (id) =>
+        set((s) => {
+          const d = s.customs.find((x) => x.id === id);
+          return d ? designState(d) : {};
+        }),
+      deleteDesign: (id) =>
+        set((s) => {
+          const customs = s.customs.filter((d) => d.id !== id);
+          if (s.customId !== id) return { customs };
+          const next = chassisById(s.chassis);
+          return {
+            customs,
+            customId: null,
+            projectName: next.projectName,
+            part: next.part,
+            mcu: next.mcu,
+            picked: { ...next.picked },
+            sketch: next.sketch,
+          };
+        }),
+      pushChat: (turn) => set((s) => ({ chat: [...s.chat, turn].slice(-MAX_CHAT) })),
+      clearChat: () => set({ chat: [] }),
     }),
     {
       name: "airframe-lab",
@@ -153,7 +209,24 @@ export const useLab = create<Lab>()(
         picked: s.picked,
         sketch: s.sketch,
         notes: s.notes,
+        customs: s.customs,
+        customId: s.customId,
+        chat: s.chat,
       }),
     },
   ),
 );
+
+/** The custom design on the bench, or null when a built-in chassis is active. */
+export function useActiveDesign(): CustomDesign | null {
+  return useLab((s) => (s.customId ? (s.customs.find((d) => d.id === s.customId) ?? null) : null));
+}
+
+/** The wiring plan for whatever is on the bench, with a custom design's own labels. */
+export function useBenchPlan(): Plan {
+  const mcu = useLab((s) => s.mcu);
+  const picked = useLab((s) => s.picked);
+  const chassis = useLab((s) => s.chassis);
+  const design = useActiveDesign();
+  return buildPlan(mcu, picked, chassis, design ? { servos: design.servoNames, motors: design.motorNames } : undefined);
+}
