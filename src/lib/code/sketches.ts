@@ -47,22 +47,24 @@ export function makeSketch(
   plan: Plan,
   chassis: string = "plane",
 ): { filename: string; code: string } {
-  const slug = project
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "") || "airframe";
+  const slug =
+    project
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "airframe";
   const title = SKETCHES.find((s) => s.id === kind)?.name ?? kind;
+  const comment = (text: string) => text.replace(/[\r\n\\]/g, " ");
   const lines: string[] = [
     `// Noah Forge — ${title}`,
-    `// Project: ${project}`,
-    `// Airframe: ${chassis}`,
+    `// Project: ${comment(project)}`,
+    `// Airframe: ${comment(chassis)}`,
     `// Board: ${mcuName(plan.mcu)}`,
     "// Props OFF. Link the horns, or nothing, until you trust the signs.",
     "// Generated as a starting sketch. Read it before you flash it.",
     "",
   ];
   for (const issue of plan.issues.filter((i) => i.level === "fault")) {
-    lines.push(`// FAULT still open: ${issue.title}. ${issue.detail}`);
+    lines.push(`// FAULT still open: ${comment(issue.title)}. ${comment(issue.detail)}`);
   }
   if (plan.issues.some((i) => i.level === "fault")) lines.push("");
 
@@ -163,7 +165,8 @@ export function makeSketch(
 
   if (plan.i2c) lines.push(...i2cHelpers());
   if (plan.sonar) lines.push(...sonarHelper());
-  const mixes = kind === "mixer" || kind === "quad" || kind === "swash" || kind === "gait" || kind === "biped";
+  const mixes =
+    kind === "mixer" || kind === "quad" || kind === "swash" || kind === "gait" || kind === "biped";
   if (plan.receiver && mixes) lines.push(...radioHelpers());
 
   return { filename: `${slug}-${kind}.ino`, code: lines.join("\n") };
@@ -269,8 +272,12 @@ function mixerLoop(plan: Plan): string[] {
     lines.push(`  ${id(e.name).toLowerCase()}.writeMicroseconds(thrUs);`);
   }
   if (plan.drv) {
-    lines.push("  // Differential drive from roll, so the same stick language still means something on the ground.");
-    lines.push("  drive(constrain(pitch + roll, -1.0f, 1.0f), constrain(pitch - roll, -1.0f, 1.0f));");
+    lines.push(
+      "  // Differential drive from roll, so the same stick language still means something on the ground.",
+    );
+    lines.push(
+      "  drive(constrain(pitch + roll, -1.0f, 1.0f), constrain(pitch - roll, -1.0f, 1.0f));",
+    );
   }
   if (plan.servos.length === 1) lines.push("  (void)left; (void)right; (void)yaw;");
   if (plan.servos.length === 2) lines.push("  (void)yaw;");
@@ -324,19 +331,25 @@ function rateLoop(plan: Plan): string[] {
     "",
   ];
   if (!hasGyro) {
-    lines.push("  // No MPU6050 on the wiring sheet. The loop below is the shape; the sensor is missing.");
+    lines.push(
+      "  // No MPU6050 on the wiring sheet. The loop below is the shape; the sensor is missing.",
+    );
     lines.push("  float meas = 0;");
   } else {
     lines.push("  float gx, gy, gz;");
     lines.push("  if (!readGyro(gx, gy, gz)) { prevUs = 0; return; }");
-    lines.push("  // Breakouts differ. Y is pitch if the connector faces aft and the board is flat.");
+    lines.push(
+      "  // Breakouts differ. Y is pitch if the connector faces aft and the board is flat.",
+    );
     lines.push("  // Print gx and gz once if the surface ignores a pure nose-up tip.");
     lines.push("  float meas = gy;");
   }
   if (plan.receiver) {
     lines.push("  float cmd = normStick(readChannel(PIN_ELE)) * MAX_RATE;");
   } else {
-    lines.push("  float cmd = 0; // hold zero rate. Tip the board — the surface should oppose you.");
+    lines.push(
+      "  float cmd = 0; // hold zero rate. Tip the board — the surface should oppose you.",
+    );
   }
   lines.push("  float err = cmd - meas;");
   lines.push("  integ += err * dt;");
@@ -349,7 +362,9 @@ function rateLoop(plan: Plan): string[] {
   if (surface) {
     lines.push(`  ${surface}.writeMicroseconds(1500 + (int)u);`);
     for (const extra of plan.servos.slice(1)) {
-      lines.push(`  ${id(extra.name).toLowerCase()}.writeMicroseconds(1500); // other surfaces hold center`);
+      lines.push(
+        `  ${id(extra.name).toLowerCase()}.writeMicroseconds(1500); // other surfaces hold center`,
+      );
     }
   } else {
     lines.push("  // No surface pinned. Add a servo on the wiring bench.");
@@ -452,7 +467,8 @@ function swashLoop(plan: Plan): string[] {
   for (const e of plan.escs) {
     lines.push(`  ${id(e.name).toLowerCase()}.writeMicroseconds(thrUs);`);
   }
-  if (plan.servos.length === 0) lines.push("  (void)pitch; (void)roll; (void)yaw; (void)coll; (void)thrUs;");
+  if (plan.servos.length === 0)
+    lines.push("  (void)pitch; (void)roll; (void)yaw; (void)coll; (void)thrUs;");
   lines.push("  delay(15);");
   lines.push("}");
   lines.push("");
@@ -545,20 +561,20 @@ function i2cHelpers(): string[] {
     "      found++;",
     "    }",
     "  }",
-    "  if (!found) Serial.println(F(\"  none — check SDA, SCL, and ground\"));",
+    '  if (!found) Serial.println(F("  none — check SDA, SCL, and ground"));',
     "}",
     "",
   ];
   lines.push("bool readGyro(float &x, float &y, float &z) {");
-    lines.push("  Wire.beginTransmission(0x68);");
-    lines.push("  Wire.write(0x43); // GYRO_XOUT_H");
-    lines.push("  if (Wire.endTransmission(false) != 0) return false;");
-    lines.push("  if (Wire.requestFrom(0x68, 6) != 6) return false;");
-    lines.push("  int16_t gx = (Wire.read() << 8) | Wire.read();");
-    lines.push("  int16_t gy = (Wire.read() << 8) | Wire.read();");
-    lines.push("  int16_t gz = (Wire.read() << 8) | Wire.read();");
-    lines.push("  const float lsb = 131.0f; // ±250 deg/s default full scale");
-    lines.push("  x = gx / lsb; y = gy / lsb; z = gz / lsb;");
+  lines.push("  Wire.beginTransmission(0x68);");
+  lines.push("  Wire.write(0x43); // GYRO_XOUT_H");
+  lines.push("  if (Wire.endTransmission(false) != 0) return false;");
+  lines.push("  if (Wire.requestFrom(0x68, 6) != 6) return false;");
+  lines.push("  int16_t gx = (Wire.read() << 8) | Wire.read();");
+  lines.push("  int16_t gy = (Wire.read() << 8) | Wire.read();");
+  lines.push("  int16_t gz = (Wire.read() << 8) | Wire.read();");
+  lines.push("  const float lsb = 131.0f; // ±250 deg/s default full scale");
+  lines.push("  x = gx / lsb; y = gy / lsb; z = gz / lsb;");
   lines.push("  return true;");
   lines.push("}");
   lines.push("");

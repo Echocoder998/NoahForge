@@ -9,6 +9,8 @@ const ChatInput = z.object({
     .max(16),
   current: DesignOutput.nullable(),
   faults: z.array(z.string().max(300)).max(12),
+  engineeringContext: z.string().max(8000).optional(),
+  coachingMode: z.enum(["explain", "hint", "design"]).optional(),
 });
 
 export const designChat = createServerFn({ method: "POST" })

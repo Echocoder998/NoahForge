@@ -57,33 +57,33 @@ export function mountMachine(
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.setClearColor(0x070913, 1);
+  renderer.setClearColor(0xfaf9f9, 1);
   renderer.domElement.style.touchAction = "none";
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x070913, 14, 42);
+  scene.fog = new THREE.Fog(0xfaf9f9, 14, 42);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.08, 80);
   const desired = new THREE.Vector3();
 
-  scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x1a1440, 0.85));
-  const key = new THREE.DirectionalLight(0xf2f8ff, 2.4);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a737b, 0.85));
+  const key = new THREE.DirectionalLight(0xffffff, 2.4);
   key.position.set(4, 8, 3);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0xa855ff, 0.7);
+  const rim = new THREE.DirectionalLight(0xc5afb6, 0.7);
   rim.position.set(-4, 3, -2);
   scene.add(rim);
 
   const floor = new THREE.Mesh(
     new THREE.CircleGeometry(18, 64),
-    new THREE.MeshStandardMaterial({ color: 0x0b1028, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: 0xe8e2e4, roughness: 1 }),
   );
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
-  const grid = new THREE.GridHelper(28, 28, 0x26e7ff, 0x1a2550);
+  const grid = new THREE.GridHelper(28, 28, 0x61162d, 0xd7c8cd);
   scene.add(grid);
   const stripe = new THREE.Mesh(
     new THREE.BoxGeometry(0.08, 0.01, 16),
-    new THREE.MeshStandardMaterial({ color: 0x26e7ff, roughness: 0.6 }),
+    new THREE.MeshStandardMaterial({ color: 0x61162d, roughness: 0.6 }),
   );
   stripe.position.set(0, 0.012, -6);
   scene.add(stripe);
@@ -224,9 +224,9 @@ export function mountMachine(
     shadow.scale.setScalar((0.85 + view.scale) * altLift);
 
     const moving = view.testing
-      ? `${sim.speed.toFixed(1)} m/s · ${sim.y.toFixed(1)} m`
+      ? `${sim.speed.toFixed(1)} m/s Â· ${sim.y.toFixed(1)} m`
       : "bay";
-    hud.textContent = `${view.project} · ${moving}`;
+    hud.textContent = `${view.project} Â· ${moving}`;
     renderer.render(scene, camera);
   };
   frame = requestAnimationFrame(loop);
@@ -360,12 +360,12 @@ function buildRig(chassis: ChassisId, legs: 6 | 8, color: string): Rig {
   const geos: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
   const body = new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.08 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x141a36, roughness: 0.72, metalness: 0.15 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x343033, roughness: 0.72, metalness: 0.15 });
   const accent = new THREE.MeshStandardMaterial({
-    color: 0x26e7ff,
+    color: 0x61162d,
     roughness: 0.35,
     metalness: 0.2,
-    emissive: 0x06424c,
+    emissive: 0x1a060c,
     emissiveIntensity: 0.4,
   });
   mats.push(body, dark, accent);
@@ -619,12 +619,12 @@ function buildCustom(design: CustomDesign, color: string): Rig {
   const geos: THREE.BufferGeometry[] = [];
   const mats = {
     body: new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.08 }),
-    dark: new THREE.MeshStandardMaterial({ color: 0x141a36, roughness: 0.72, metalness: 0.15 }),
+    dark: new THREE.MeshStandardMaterial({ color: 0x343033, roughness: 0.72, metalness: 0.15 }),
     accent: new THREE.MeshStandardMaterial({
-      color: 0x26e7ff,
+      color: 0x61162d,
       roughness: 0.35,
       metalness: 0.2,
-      emissive: 0x06424c,
+      emissive: 0x1a060c,
       emissiveIntensity: 0.4,
     }),
   };

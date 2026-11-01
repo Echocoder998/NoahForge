@@ -158,7 +158,7 @@ export default defineConfig(({ command, isPreview }) => ({
   },
   resolve: { tsconfigPaths: true },
   // Discover optional 3D tools before the first workspace switch.
-  optimizeDeps: { include: ["three", "three/addons/controls/OrbitControls.js"] },
+  optimizeDeps: { include: ["three", "three/addons/controls/OrbitControls.js", "recharts"] },
   plugins: [
     pgliteBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.

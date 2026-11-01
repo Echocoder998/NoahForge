@@ -13,9 +13,10 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Build a plane, drone, helicopter, spider, or humanoid. Print the plates, check the wiring, then test the frame in the bay.",
+        content:
+          "A robotics engineering studio for leg kinematics, flight sizing, mounting assemblies, requirements, experiments, electronics, printable parts, and firmware.",
       },
-      { name: "theme-color", content: "#070913" },
+      { name: "theme-color", content: "#61162D" },
     ],
     links: [
       { rel: "icon", type: "image/png", href: "/favicon.png" },

@@ -112,6 +112,23 @@ try {
     const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     const status = resp?.status() ?? 0;
     await page.waitForTimeout(1000);
+    await page.waitForFunction(
+      () => Boolean(document.body?.innerText.trim()) || Boolean(document.querySelector("canvas")),
+      undefined,
+      { timeout: timeoutMs },
+    );
+    await page.waitForFunction(
+      () => Array.from(document.images).every((img) => img.complete),
+      undefined,
+      { timeout: timeoutMs },
+    );
+    const brokenImages = await page
+      .locator("img")
+      .evaluateAll((images) =>
+        images.filter((img) => img.naturalWidth === 0).map((img) => img.getAttribute("src")),
+      );
+    if (brokenImages.length) throw new Error(`Images failed to load: ${brokenImages.join(", ")}`);
+    await page.evaluate(() => document.fonts.ready);
 
     const title = await page.title();
     const hasCanvas = (await page.locator("canvas").count()) > 0;

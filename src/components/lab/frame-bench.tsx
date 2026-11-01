@@ -21,6 +21,8 @@ export function FrameBench() {
   const setLegs = useLab((s) => s.setLegs);
   const design = useActiveDesign();
   const [testing, setTesting] = useState(false);
+  const [viewError, setViewError] = useState("");
+  const [viewAttempt, setViewAttempt] = useState(0);
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hudRef = useRef<HTMLParagraphElement>(null);
@@ -50,15 +52,22 @@ export function FrameBench() {
     if (!host || !canvas || !hud) return;
     let dead = false;
     let stop = () => {};
-    void import("./machine-view").then((mod) => {
-      if (dead || !hostRef.current || !canvasRef.current || !hudRef.current) return;
-      stop = mod.mountMachine(hostRef.current, canvasRef.current, live, hudRef.current);
-    });
+    void import("./machine-view")
+      .then((mod) => {
+        if (dead || !hostRef.current || !canvasRef.current || !hudRef.current) return;
+        stop = mod.mountMachine(hostRef.current, canvasRef.current, live, hudRef.current);
+      })
+      .catch(() => {
+        if (!dead)
+          setViewError(
+            "The assembly preview could not start. Your project and other workspaces are available.",
+          );
+      });
     return () => {
       dead = true;
       stop();
     };
-  }, []);
+  }, [viewAttempt]);
 
   const spec = chassisById(chassis);
   const servos = (picked.sg90 ?? 0) + (picked.mg996 ?? 0);
@@ -82,9 +91,18 @@ export function FrameBench() {
         <p className="font-mono text-xs tracking-widest text-dust">FRAME</p>
         <p className="mt-2 text-sm text-dust">{design ? design.blurb : spec.blurb}</p>
         <p className="mt-2 text-sm text-dust">
-          This bay is the assembled machine. Printable files are on Print — one STL at a time, then the slicer.
+          This bay is the assembled machine. Printable files are on Print — one STL at a time, then
+          the slicer.
         </p>
-        <NumField label="Size" unit="%" value={Math.round(scale * 100)} min={75} max={140} step={1} onChange={(n) => setScale(n / 100)} />
+        <NumField
+          label="Size"
+          unit="%"
+          value={Math.round(scale * 100)}
+          min={75}
+          max={140}
+          step={1}
+          onChange={(n) => setScale(n / 100)}
+        />
         {!design && chassis === "spider" && (
           <>
             <p className="mt-3 text-sm">Legs</p>
@@ -112,6 +130,23 @@ export function FrameBench() {
         </p>
       </section>
       <section className="relative order-1 min-h-72 overflow-hidden rounded-md border border-line bg-hangar md:order-2 md:min-h-[32rem]">
+        {viewError && (
+          <div
+            role="alert"
+            className="absolute inset-0 z-10 grid place-content-center gap-3 bg-panel p-6 text-center text-sm"
+          >
+            <p>{viewError}</p>
+            <button
+              className="min-h-11 rounded-md border border-line px-3"
+              onClick={() => {
+                setViewError("");
+                setViewAttempt((n) => n + 1);
+              }}
+            >
+              Retry assembly preview
+            </button>
+          </div>
+        )}
         <div ref={hostRef} className="h-72 w-full md:h-[32rem]">
           <canvas ref={canvasRef} className="block h-full w-full" />
         </div>
@@ -126,11 +161,27 @@ export function FrameBench() {
           <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 bg-hangar/80 p-3 backdrop-blur-sm">
             <div className="grid grid-cols-3 gap-2">
               <span />
-              <Pad label={isPlane ? "Nose up" : motion === "fixed" ? "Run" : "Forward"} code="KeyW" hold={hold} />
+              <Pad
+                label={isPlane ? "Nose up" : motion === "fixed" ? "Run" : "Forward"}
+                code="KeyW"
+                hold={hold}
+              />
               <span />
-              <Pad label={isPlane ? "Bank L" : motion === "fixed" ? "Turn L" : "Left"} code="KeyA" hold={hold} />
-              <Pad label={isPlane ? "Nose dn" : motion === "fixed" ? "Reverse" : "Back"} code="KeyS" hold={hold} />
-              <Pad label={isPlane ? "Bank R" : motion === "fixed" ? "Turn R" : "Right"} code="KeyD" hold={hold} />
+              <Pad
+                label={isPlane ? "Bank L" : motion === "fixed" ? "Turn L" : "Left"}
+                code="KeyA"
+                hold={hold}
+              />
+              <Pad
+                label={isPlane ? "Nose dn" : motion === "fixed" ? "Reverse" : "Back"}
+                code="KeyS"
+                hold={hold}
+              />
+              <Pad
+                label={isPlane ? "Bank R" : motion === "fixed" ? "Turn R" : "Right"}
+                code="KeyD"
+                hold={hold}
+              />
             </div>
             {flyer && (
               <div className="grid grid-cols-2 gap-2">

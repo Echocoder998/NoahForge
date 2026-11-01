@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Minus, Plus, Search, X } from "lucide-react";
 import { DEVICES, GROUPS, MCUS, type DeviceId, type McuId } from "@/lib/wire/catalog";
 import { countOf, type WireKind } from "@/lib/wire/plan";
-import { useBenchPlan, useLab } from "@/lib/lab-store";
+import { useAutomaticPlan, useBenchPlan, useLab } from "@/lib/lab-store";
+import { availableSignalPins } from "@/lib/wire/pin-overrides";
 
 const KIND: Record<WireKind, string> = {
   power: "bg-magenta",
@@ -18,6 +19,10 @@ export function WireBench() {
   const setMcu = useLab((s) => s.setMcu);
   const setDevice = useLab((s) => s.setDevice);
   const plan = useBenchPlan();
+  const automatic = useAutomaticPlan();
+  const overrides = useLab((s) => s.pinOverrides);
+  const setPinOverride = useLab((s) => s.setPinOverride);
+  const clearPinOverrides = useLab((s) => s.clearPinOverrides);
   const faults = plan.issues.filter((i) => i.level === "fault");
   const cautions = plan.issues.filter((i) => i.level === "caution");
   const [search, setSearch] = useState("");
@@ -227,17 +232,47 @@ export function WireBench() {
             </p>
           ) : (
             <ul>
-              {plan.pins.map((pin) => (
+              {automatic.pins.map((pin) => (
                 <li
                   key={`${pin.pin}-${pin.goesTo}`}
                   className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
                 >
-                  <span className="font-mono text-sm text-cyan">{pin.pin}</span>
+                  {pin.kind === "signal" ? (
+                    <select
+                      aria-label={`Pin for ${pin.goesTo}`}
+                      value={overrides[pin.pin] ?? pin.pin}
+                      onChange={(event) => setPinOverride(pin.pin, event.target.value)}
+                      className="min-h-11 rounded-md border border-line bg-hangar px-2 font-mono text-sm text-cyan"
+                    >
+                      {availableSignalPins(mcu).map((target) => (
+                        <option value={target} key={target}>
+                          {target === pin.pin ? `${target} (auto)` : target}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="font-mono text-sm text-cyan">{pin.pin} · fixed</span>
+                  )}
                   <span className="text-right text-sm">{pin.goesTo}</span>
                 </li>
               ))}
             </ul>
           )}
+          <div className="border-t border-line p-4">
+            <p className="text-xs text-dust">
+              Signal assignments update the schematic, breakout, and firmware together. Fixed bus
+              pins stay unchanged. Invalid assignments keep the automatic plan and add blocking
+              faults.
+            </p>
+            {Object.keys(overrides).length > 0 && (
+              <button
+                className="mt-2 min-h-11 rounded-md border border-line px-3 text-sm"
+                onClick={clearPinOverrides}
+              >
+                Reset pin assignments
+              </button>
+            )}
+          </div>
         </section>
 
         <section className="rounded-md border border-line bg-panel">

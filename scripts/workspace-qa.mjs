@@ -165,6 +165,41 @@ try {
   checks.push(
     "Firmware uses the updated sensor plan; assembly renders and A/D bank left/right while moving",
   );
+  for (const name of ["Drone", "Helicopter", "Spider", "Humanoid"]) {
+    await page.getByRole("button", { name: "Projects", exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: new RegExp(`^${name}`) })
+      .click();
+    await nav().getByRole("button", { name: "3D assembly", exact: true }).click();
+    await page.waitForFunction(() => Boolean(window.__controlsTest));
+    await page.getByRole("button", { name: "Start", exact: true }).click();
+    const result = await page.evaluate(async () => {
+      const p = window.__controlsTest;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      p.setKeys(["KeyW"]);
+      await wait(500);
+      const speed = p.getSpeed();
+      const y0 = p.getYaw();
+      p.setKeys(["KeyW", "KeyA"]);
+      await wait(300);
+      const left = p.getYaw() - y0;
+      const y1 = p.getYaw();
+      p.setKeys(["KeyW", "KeyD"]);
+      await wait(300);
+      const right = p.getYaw() - y1;
+      p.setKeys([]);
+      return { speed, left, right };
+    });
+    assert(
+      result.speed > 0.05 && result.left > 0.05 && result.right < -0.05,
+      `${name} controls: ${JSON.stringify(result)}`,
+    );
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+  }
+  checks.push(
+    "All five original chassis templates render with working left/right movement controls",
+  );
 
   await page.setViewportSize({ width: 390, height: 844 });
   await nav().getByRole("button", { name: "Schematic", exact: true }).click();

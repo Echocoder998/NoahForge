@@ -15,7 +15,13 @@ import {
 } from "lucide-react";
 import { designChat } from "@/lib/design-chat";
 import { useActiveDesign, useBenchPlan, useLab, type ChatTurn } from "@/lib/lab-store";
-import { designToOutput, sanitizeDesign, type DesignOutputT } from "@/lib/robots/design";
+import {
+  designToOutput,
+  sanitizeDesign,
+  type DesignOutputT,
+  type CustomDesign,
+} from "@/lib/robots/design";
+import { Button } from "@/components/ui/button";
 import { chassisById, escLabel, servoLabel } from "@/lib/robots/chassis";
 import { mcuName, type DeviceId } from "@/lib/wire/catalog";
 import { buildPlan } from "@/lib/wire/plan";
@@ -47,6 +53,13 @@ export function DesignBench() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState(false);
+  const [coachingMode, setCoachingMode] = useState<"explain" | "hint" | "design">("explain");
+  const [proposal, setProposal] = useState<{ design: CustomDesign; signature: string } | null>(
+    null,
+  );
+  const [undoId, setUndoId] = useState<string | null>(null);
+  const projectId = useLab((s) => s.projectId);
+  const engineering = useLab((s) => s.engineering);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const preset = chassisById(chassis);
@@ -60,7 +73,11 @@ export function DesignBench() {
   useEffect(() => {
     setFresh(false);
     setDraft("");
-  }, [chassis, active?.id]);
+    setProposal(null);
+  }, [projectId, chassis, active?.id]);
+  useEffect(() => {
+    setUndoId(null);
+  }, [projectId, chassis]);
 
   const openBoard = (view: "schematic" | "board") => {
     setBoardView(view);
@@ -74,7 +91,7 @@ export function DesignBench() {
 
   const send = async (text: string) => {
     const msg = text.trim().slice(0, 2000);
-    if (!msg || busy) return;
+    if (!msg || busy || proposal) return;
     setDraft("");
     setBusy(true);
     const turn: ChatTurn = { role: "user", text: msg };
@@ -158,6 +175,38 @@ export function DesignBench() {
           faults: fresh
             ? []
             : faults.slice(0, 12).map((i) => (i.title + ": " + i.detail).slice(0, 300)),
+          coachingMode,
+          engineeringContext: JSON.stringify({
+            mission: {
+              ...engineering.mission,
+              summary: engineering.mission.summary.slice(0, 600),
+              requirements: engineering.mission.requirements
+                .slice(0, 8)
+                .map((requirement) => ({
+                  ...requirement,
+                  text: requirement.text.slice(0, 120),
+                  evidence: requirement.evidence.slice(0, 160),
+                })),
+            },
+            leg: engineering.leg,
+            flight: {
+              ...engineering.flight,
+              thrustSource: engineering.flight.thrustSource.slice(0, 300),
+              massItems: engineering.flight.massItems
+                .slice(0, 20)
+                .map((item) => ({ ...item, source: item.source.slice(0, 120) })),
+            },
+            assembly: engineering.assembly,
+            recentTests: engineering.notebook
+              .slice(-3)
+              .map(({ title, predicted, measured, unit, notes }) => ({
+                title,
+                predicted,
+                measured,
+                unit,
+                notes,
+              })),
+          }).slice(0, 8000),
         },
       });
       if (!requestIsCurrent()) return;
@@ -167,11 +216,10 @@ export function DesignBench() {
       }
       let note = "";
       let designId = editing?.id;
-      if (res.changed || !current) {
+      if (coachingMode !== "hint" && (res.changed || !current)) {
         const design = sanitizeDesign(res.design, editing?.id ?? newId());
-        saveDesign(design);
+        setProposal({ design, signature: before });
         designId = design.id;
-        setFresh(false);
         const after = buildPlan(design.mcu, design.picked, chassis, {
           servos: design.servoNames,
           motors: design.motorNames,
@@ -184,6 +232,7 @@ export function DesignBench() {
             (n === 1 ? "" : "s") +
             " to review in Components & wiring."
           : "\n\nWiring check: no blocking wiring faults. Review the schematic and part datasheets before building.";
+        note += "\n\nProposal ready. Review and apply it below to update your project.";
       }
       pushChat({ role: "assistant", text: res.reply + note, designId });
     } catch {
@@ -197,6 +246,30 @@ export function DesignBench() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const applyProposal = () => {
+    if (!proposal) return;
+    if (proposal.signature !== projectSignature()) {
+      setProposal(null);
+      pushChat({
+        role: "assistant",
+        text: "Your project changed after this proposal was prepared. I kept the current version; request an updated proposal.",
+        error: true,
+      });
+      return;
+    }
+    useLab.getState().saveSnapshot();
+    const beforeId = useLab.getState().snapshots[0]?.id ?? null;
+    saveDesign(proposal.design);
+    setProposal(null);
+    setFresh(false);
+    setUndoId(beforeId);
+    pushChat({
+      role: "assistant",
+      text: "Proposal applied. The previous setup is available in restore points.",
+      designId: proposal.design.id,
+    });
   };
 
   return (
@@ -233,6 +306,7 @@ export function DesignBench() {
                 disabled={busy}
                 onClick={() => {
                   setFresh(true);
+                  setProposal(null);
                   clearChat();
                   setDraft("");
                   inputRef.current?.focus();
@@ -327,6 +401,81 @@ export function DesignBench() {
           )}
         </div>
 
+        <div className="border-t border-line px-4 py-3">
+          <label className="flex flex-wrap items-center gap-3 text-xs font-medium text-dust">
+            Assistant approach
+            <select
+              aria-label="Assistant approach"
+              value={coachingMode}
+              disabled={busy || !!proposal}
+              onChange={(event) => setCoachingMode(event.target.value as typeof coachingMode)}
+              className="min-h-11 rounded-md border border-line bg-hangar px-3 text-sm text-paper"
+            >
+              <option value="explain">Explain the engineering</option>
+              <option value="hint">Give me a hint</option>
+              <option value="design">Propose a design change</option>
+            </select>
+          </label>
+        </div>
+        {proposal && (
+          <section
+            className="m-4 rounded-xl border border-cyan bg-hangar p-4"
+            aria-label="Review AI proposal"
+          >
+            <h3 className="font-semibold">Review proposal: {proposal.design.name}</h3>
+            <p className="mt-2 text-sm text-dust">{proposal.design.blurb}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <dt>Controller</dt>
+              <dd>
+                {mcuName(benchMcu)} → {mcuName(proposal.design.mcu)}
+              </dd>
+              <dt>Catalog devices</dt>
+              <dd>
+                {Object.values(benchPicked).reduce((sum, n) => sum + (n ?? 0), 0)} →{" "}
+                {Object.values(proposal.design.picked).reduce((sum, n) => sum + (n ?? 0), 0)}
+              </dd>
+              <dt>Model parts</dt>
+              <dd>{proposal.design.parts.length}</dd>
+            </dl>
+            <ul className="mt-3 text-xs text-dust">
+              {[...new Set([...Object.keys(proposal.design.picked), ...Object.keys(benchPicked)])]
+                .filter(
+                  (id) =>
+                    (proposal.design.picked[id as DeviceId] ?? 0) !==
+                    (benchPicked[id as DeviceId] ?? 0),
+                )
+                .map((id) => (
+                  <li key={id}>
+                    {id}: {benchPicked[id as DeviceId] ?? 0} →{" "}
+                    {proposal.design.picked[id as DeviceId] ?? 0}
+                  </li>
+                ))}
+            </ul>
+            {Object.keys(useLab.getState().pinOverrides).length > 0 && (
+              <p className="mt-3 text-xs text-dust">
+                Applying this machine proposal resets manual pin assignments to automatic
+                allocation. The current assignments remain in its restore point.
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button variant="primary" onClick={applyProposal}>
+                Apply proposal
+              </Button>
+              <Button onClick={() => setProposal(null)}>Discard proposal</Button>
+            </div>
+          </section>
+        )}
+        {undoId && (
+          <Button
+            className="mx-4 mb-3"
+            onClick={() => {
+              useLab.getState().restoreSnapshot(undoId);
+              setUndoId(null);
+            }}
+          >
+            Undo applied proposal
+          </Button>
+        )}
         <form
           className="border-t border-line p-4"
           onSubmit={(e) => {
@@ -341,7 +490,7 @@ export function DesignBench() {
             ref={inputRef}
             id="design-msg"
             value={draft}
-            disabled={busy}
+            disabled={busy || !!proposal}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -362,7 +511,7 @@ export function DesignBench() {
             <p className="text-xs text-dust">Enter to send · Shift + Enter for a new line</p>
             <button
               type="submit"
-              disabled={busy || !draft.trim()}
+              disabled={busy || !!proposal || !draft.trim()}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-cyan px-4 text-sm font-semibold text-ink disabled:opacity-40"
             >
               {busy ? (
@@ -540,8 +689,11 @@ function projectSignature(): string {
     s.projectName,
     s.mcu,
     s.picked,
+    s.pinOverrides,
     s.sketch,
     s.part,
+    s.projectId,
+    s.engineering,
     design,
   ]);
 }

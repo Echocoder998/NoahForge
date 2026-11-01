@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { beforeEach, describe, it } from "node:test";
 import type { CustomDesign } from "./robots/design";
+import { createJSONStorage } from "zustand/middleware";
 
 // Give Zustand an isolated, synchronous browser-storage substitute at import
 // time. The tests never read or clear a real browser's localStorage.
@@ -25,6 +27,7 @@ Object.defineProperty(globalThis, "window", {
   value: { localStorage: memoryStorage },
 });
 const { useLab } = await import("./lab-store");
+useLab.persist.setOptions({ storage: createJSONStorage(() => memoryStorage) });
 if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
 else Reflect.deleteProperty(globalThis, "window");
 
@@ -51,6 +54,9 @@ function currentProject(s: State = useLab.getState()) {
     sketch,
     notes,
     customId,
+    projectId,
+    engineering,
+    pinOverrides,
   } = s;
   return structuredClone({
     projectName,
@@ -72,6 +78,9 @@ function currentProject(s: State = useLab.getState()) {
     sketch,
     notes,
     customId,
+    projectId,
+    engineering,
+    pinOverrides,
   });
 }
 
@@ -111,6 +120,23 @@ beforeEach(() => {
 });
 
 describe("project recovery", { concurrency: false }, () => {
+  it("resets workspace sessions when reopening or restoring the same project", () => {
+    const actions = useLab.getState();
+    actions.saveProject();
+    actions.saveSnapshot();
+    const id = useLab.getState().projectId;
+    const snapshotId = useLab.getState().snapshots[0]!.id;
+    const first = useLab.getState().projectRevision;
+    actions.openProject(id);
+    assert.equal(useLab.getState().projectRevision, first + 1);
+    actions.restoreSnapshot(snapshotId);
+    assert.equal(useLab.getState().projectRevision, first + 2);
+    assert.equal(useLab.getState().projectId, id);
+    assert.equal(
+      "projectRevision" in JSON.parse(memoryStorage.getItem("airframe-lab")!).state,
+      false,
+    );
+  });
   it("restores a saved setup including edited print dimensions, electronics, and notes", () => {
     const actions = useLab.getState();
     actions.setProjectName("My tuned wing");
@@ -146,9 +172,7 @@ describe("project recovery", { concurrency: false }, () => {
       "later print edits must not mutate the saved dimensions",
     );
     assert.ok(
-      useLab
-        .getState()
-        .snapshots.some((snapshot) => JSON.stringify(snapshot.state) === JSON.stringify(outgoing)),
+      useLab.getState().snapshots.some((snapshot) => isDeepStrictEqual(snapshot.state, outgoing)),
       "restoring a backup must preserve the setup being replaced",
     );
   });
@@ -262,6 +286,36 @@ describe("saved AI design edits", { concurrency: false }, () => {
       expected.mcu,
       "reopening must not revive the later design revision",
     );
+  });
+});
+
+describe("named engineering projects", { concurrency: false }, () => {
+  it("keeps engineering work, notes and pin assignments separate between projects", () => {
+    const actions = useLab.getState();
+    const firstId = useLab.getState().projectId;
+    actions.setProjectName("Walking research");
+    actions.patchEngineering({ leg: { ...useLab.getState().engineering.leg, upperMm: 93 } });
+    actions.setPinOverride("10", "11");
+    actions.setNotes("First project's notes");
+    actions.saveProject();
+    actions.setChassis("drone");
+    actions.setProjectName("Flying research");
+    actions.saveProject();
+    assert.equal(useLab.getState().projects.length, 2);
+    actions.openProject(firstId);
+    assert.equal(useLab.getState().engineering.leg.upperMm, 93);
+    assert.equal(useLab.getState().notes, "First project's notes");
+    assert.deepEqual(useLab.getState().pinOverrides, { "10": "11" });
+    assert(useLab.getState().snapshots.some((p) => p.state.projectName === "Flying research"));
+  });
+  it("clears manual assignments when automatic catalog allocation changes", () => {
+    const actions = useLab.getState();
+    actions.setPinOverride("10", "11");
+    actions.setDevice("hcsr04", 1);
+    assert.deepEqual(useLab.getState().pinOverrides, {});
+    actions.setPinOverride("10", "11");
+    actions.setMcu("esp32");
+    assert.deepEqual(useLab.getState().pinOverrides, {});
   });
 });
 

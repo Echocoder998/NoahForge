@@ -5,19 +5,21 @@
   --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  --color-void: #101316;
-  --color-hangar: #14181c;
-  --color-panel: #1a1f24;
-  --color-raised: #252d34;
-  --color-paper: #edf1f4;
-  --color-dust: #a7b3be;
-  --color-line: #343e47;
-  --color-cyan: #90d1e8;
-  --color-blue: #80a9d0;
-  --color-violet: #b2c6d8;
-  --color-magenta: #ef9999;
-  --color-mint: #98cbb1;
-  --color-ink: #11171b;
+  --color-void: #f5f3f3;
+  --color-hangar: #faf9f9;
+  --color-panel: #ffffff;
+  --color-raised: #f0e4e8;
+  --color-paper: #181516;
+  --color-dust: #635b5e;
+  --color-line: #d8cfd2;
+  --color-cyan: #61162d;
+  --color-blue: #3e4046;
+  --color-violet: #8d5a69;
+  --color-magenta: #ac2633;
+  --color-mint: #216746;
+  --color-ink: #ffffff;
+  --color-primary: #61162d;
+  --color-primary-foreground: #ffffff;
   --color-pla-natural: #e4d2ae;
   --color-pla-black: #2c2c2a;
   --color-pla-orange: #e25b1a;
@@ -33,7 +35,7 @@
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -92,6 +94,7 @@
     padding: 1rem 1.5rem;
     border-bottom: 1px solid var(--color-line);
     background: var(--color-hangar);
+    border-top: 4px solid var(--color-cyan);
   }
   .forge-brand {
     display: flex;
@@ -103,6 +106,29 @@
     font-size: 1rem;
     font-weight: 600;
     letter-spacing: -0.025em;
+  }
+  .precision-logo {
+    width: 4rem;
+    height: 4rem;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+  .engineering-panel {
+    min-width: 0;
+    padding: 1.25rem;
+    border: 1px solid var(--color-line);
+    border-radius: 0.75rem;
+    background: var(--color-panel);
+  }
+  .engineering-input {
+    min-height: 2.75rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-line);
+    border-radius: 0.5rem;
+    background: var(--color-hangar);
+    color: var(--color-paper);
+    font-size: 0.875rem;
   }
   .brand-caption {
     display: block;
@@ -313,8 +339,11 @@
     box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.25);
   }
   .skip-link {
-    position: fixed;
-    top: -5rem;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
     left: 1rem;
     z-index: 100;
     padding: 0.75rem;
@@ -323,6 +352,11 @@
     color: var(--color-ink);
   }
   .skip-link:focus {
+    position: fixed;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
     top: 0.5rem;
   }
   @media (max-width: 1023px) {

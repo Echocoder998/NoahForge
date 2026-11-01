@@ -15,6 +15,10 @@ import {
 } from "./browser-smoke-verdict.mjs";
 
 const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+test("blank HTML with a clean console is still a failed render", () => {
+  assert.equal(exitCodeFor({ desktop: { status: 200, bodyTextLen: 0, hasCanvas: false } }), 2);
+  assert.equal(exitCodeFor({ desktop: { status: 200, bodyTextLen: 0, hasCanvas: true } }), 0);
+});
 
 function viewport(overrides = {}) {
   return {
@@ -377,7 +381,10 @@ test("browser-smoke wires the guard and verdict helpers", () => {
   assert.match(src, /from "\.\/browser-smoke-verdict\.mjs"/);
   assert.match(src, /const args = parseSmokeArgs\(process\.argv\.slice\(2\), process\.env\)/);
   assert.match(src, /const url = checkedUrl\(args\.url\)/);
-  assert.match(src, /const screenshotRoots = \[fileURLToPath\(new URL\("\.\.", import\.meta\.url\)\)\]/);
+  assert.match(
+    src,
+    /const screenshotRoots = \[fileURLToPath\(new URL\("\.\.", import\.meta\.url\)\)\]/,
+  );
   assert.match(src, /const outPng = checkedOutputPath\(args\.outPng, screenshotRoots\)/);
   assert.match(src, /const mobilePng = checkedOutputPath\(derived\.mobilePng, screenshotRoots\)/);
   assert.match(src, /const outJson = checkedOutputPath\(derived\.verdictJson, screenshotRoots/);

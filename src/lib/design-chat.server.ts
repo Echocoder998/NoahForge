@@ -10,6 +10,8 @@ export type ChatInput = {
   messages: { role: "user" | "assistant"; text: string }[];
   current: DesignOutputT | null;
   faults: string[];
+  engineeringContext?: string;
+  coachingMode?: "explain" | "hint" | "design";
 };
 
 export type ChatResult =
@@ -17,7 +19,13 @@ export type ChatResult =
   | { ok: false; error: string };
 
 // Stable text only, so the prompt cache can reuse it on every turn.
-const SYSTEM = `You are the Noah Forge design assistant. You help a student design small robots and RC machines in Noah Forge, a build planner. The student describes a machine; you return a design the app draws in 3D, wires, and turns into a starter Arduino sketch from a fixed template.
+const SYSTEM = `You are the Noah Forge engineering design assistant for a university mechanical engineering student experienced with rover projects and interested in aeronautical and insectoid robotics. Treat the user as a capable engineering collaborator. Explain assumptions, equations, units, tradeoffs, and verification steps at the requested depth. The app draws robot concepts in 3D, checks catalog wiring, and supplies starter firmware templates.
+
+Engineering workspaces
+- Mission defines requirements and verification evidence. Legs & gait solves inverse kinematics and static support/torque; Flight sizing estimates mass, COM, thrust-to-weight, runtime and wing loading; Mechanical assembly exports mounting geometry; Notebook compares predictions with measurements.
+- Use the supplied engineering context as user inputs, not experimentally established facts. Never invent measured results, test curves, certification, sources or datasheet URLs. Reference provided component sources; identify anything requiring a datasheet or physical test.
+- Geometry animation is not validated flight dynamics. Kinematic gait previews do not establish dynamic stability. Static torque estimates do not prove a servo's continuous capability. Board SVGs are conceptual and are not Gerber fabrication data.
+- In hint mode, guide the reasoning without modifying the design (changed=false). In explain mode, answer questions without modifications unless explicitly requested. In design mode, propose only requested edits. The app presents proposals for review before applying them.
 
 How the 3D bay works
 - Units are roughly meters at toy scale. y is up, the floor is y = 0, the front of the machine faces -z, +x is the machine's right.
@@ -52,7 +60,7 @@ printPart is the one printable piece the Print bench shows: rib (wing rib), moto
 The Board tab is already in the app. It draws the schematic, routes a 2-layer signal breakout, lists parts, and runs checks from the wiring plan. You do not design that board yourself. If the student asks to route, show a schematic, or list parts, tell them the Board tab does it from the current machine, and still return the design.
 
 How to answer
-- The student is young. Keep "reply" to two to four short sentences: what you built or changed and one thing to check next. No code, no markdown.
+- Give a clear engineering explanation, with equations and units when useful. Distinguish calculations from assumptions and measured evidence. Keep routine replies concise, and expand when the user asks for analysis. No firmware code: the app provides reviewed starter templates.
 - If the student asks a question without asking for a change, answer it, set changed to false, and return the current design unchanged.
 - When a design already exists, change only what the student asked for and keep the rest the same.
 - If wiring faults are listed, fix them when you change the design and say what you fixed.
@@ -61,7 +69,11 @@ How to answer
 
 export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) {
-    return { ok: false, error: "Noah Forge's designer isn't set up yet: the ANTHROPIC_API_KEY setting is missing on the server." };
+    return {
+      ok: false,
+      error:
+        "Noah Forge's designer isn't set up yet: the ANTHROPIC_API_KEY setting is missing on the server.",
+    };
   }
 
   const history = input.messages.filter((m) => m.text.trim());
@@ -73,7 +85,13 @@ export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
     input.current
       ? `Current design (JSON):\n${JSON.stringify(input.current)}`
       : "There is no design yet. Create one from my message.",
-    input.faults.length ? `Wiring check faults right now:\n${input.faults.map((f) => `- ${f}`).join("\n")}` : "",
+    input.faults.length
+      ? `Wiring check faults right now:\n${input.faults.map((f) => `- ${f}`).join("\n")}`
+      : "",
+    input.engineeringContext
+      ? `Engineering inputs and notebook summary:\n${input.engineeringContext}`
+      : "",
+    `Coaching mode: ${input.coachingMode || "explain"}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -83,7 +101,7 @@ export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
     content: i === history.length - 1 ? `${m.text}\n\n---\n${context}` : m.text,
   }));
 
-  const client = new Anthropic();
+  const client = new Anthropic({ timeout: 60000, maxRetries: 0 });
   try {
     const response = await client.beta.messages.parse({
       model: DESIGN_MODEL,
@@ -97,27 +115,46 @@ export async function runDesignChat(input: ChatInput): Promise<ChatResult> {
     });
 
     if (response.stop_reason === "refusal") {
-      return { ok: false, error: "The designer declined that one. Try describing the machine differently." };
+      return {
+        ok: false,
+        error: "The designer declined that one. Try describing the machine differently.",
+      };
     }
     if (response.stop_reason === "max_tokens") {
-      return { ok: false, error: "That design got too big to finish. Ask for something with fewer parts." };
+      return {
+        ok: false,
+        error: "That design got too big to finish. Ask for something with fewer parts.",
+      };
     }
     const out = response.parsed_output;
-    if (!out) return { ok: false, error: "The designer's answer didn't come back in the right shape. Try again." };
+    if (!out)
+      return {
+        ok: false,
+        error: "The designer's answer didn't come back in the right shape. Try again.",
+      };
     return { ok: true, reply: out.reply, changed: out.changed, design: out.design };
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
-      return { ok: false, error: "The Anthropic API key was rejected. Check the ANTHROPIC_API_KEY setting." };
+      return {
+        ok: false,
+        error: "The Anthropic API key was rejected. Check the ANTHROPIC_API_KEY setting.",
+      };
     }
     if (err instanceof Anthropic.RateLimitError) {
       return { ok: false, error: "Too many requests at once. Wait a minute and try again." };
     }
     if (err instanceof Anthropic.APIConnectionError) {
-      return { ok: false, error: "Couldn't reach the designer. Check the connection and try again." };
+      return {
+        ok: false,
+        error: "Couldn't reach the designer. Check the connection and try again.",
+      };
     }
     if (err instanceof Anthropic.APIError) {
       // A 400 here is usually an empty credit balance; the API says so in the message.
-      return { ok: false, error: `The designer couldn't answer (${err.status ?? "error"}): ${err.message}` };
+      return {
+        ok: false,
+        error: `The design service could not complete this request (${err.status ?? "service error"}). Your project is unchanged. Check the service configuration or try again.`,
+      };
     }
     throw err;
   }

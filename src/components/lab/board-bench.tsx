@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { bomCsv, buildPacket, type Check, type Trace, type WireKind } from "@/lib/board/build";
 import { boardSvg, schematicSvg } from "@/lib/board/svg";
+import { kicadNetlist } from "@/lib/board/netlist";
 import { useBenchPlan, useLab } from "@/lib/lab-store";
 
 const STROKE: Record<WireKind, string> = {
@@ -201,9 +202,25 @@ export function BoardBench() {
           </button>
         </div>
         <div className="border-t border-line px-4 py-3">
+          <button
+            type="button"
+            onClick={() =>
+              download(
+                `${fileBase(projectName)}-connectivity.net`,
+                kicadNetlist(packet.board, projectName),
+                "text/plain",
+              )
+            }
+            className="mb-3 inline-flex min-h-11 items-center gap-2 rounded-md border border-line px-3 text-sm"
+          >
+            <Download className="size-4" aria-hidden />
+            Export KiCad netlist
+          </button>
           <p className="text-xs text-dust">
-            Drawings update from your components. SVG previews are for review; manufacturing needs a
-            verified CAD layout and Gerber files. Servo power stays on the external BEC wiring.
+            Drawings update from your components and pin assignments. The KiCad netlist uses generic
+            numbered connector pins; assign and verify real footprints and pin maps in CAD. SVG
+            previews are for review; manufacturing needs a verified CAD layout and Gerber files.
+            Servo power stays on the external BEC wiring.
           </p>
           <p role="status" className="mt-1 text-xs text-cyan">
             {refreshed

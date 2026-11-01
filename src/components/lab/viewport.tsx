@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Props = {
   positions: Float32Array;
@@ -11,6 +11,8 @@ type Api = {
 };
 
 export function Viewport({ positions, indices, color }: Props) {
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const hostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
   const latest = useRef({ positions, indices, color });
@@ -40,28 +42,32 @@ export function Viewport({ positions, indices, color }: Props) {
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
 
-      scene.add(new THREE.HemisphereLight(0xe6f4ff, 0x1a1440, 0.9));
-      const key = new THREE.DirectionalLight(0xf2f8ff, 2.2);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x8a737b, 0.9));
+      const key = new THREE.DirectionalLight(0xffffff, 2.2);
       key.position.set(90, 160, 70);
       scene.add(key);
-      const rim = new THREE.DirectionalLight(0xa855ff, 0.85);
+      const rim = new THREE.DirectionalLight(0xc5afb6, 0.85);
       rim.position.set(-110, 50, -40);
       scene.add(rim);
 
-      const bedMat = new THREE.MeshStandardMaterial({ color: 0x0e1430, roughness: 1 });
+      const bedMat = new THREE.MeshStandardMaterial({ color: 0xe8e2e4, roughness: 1 });
       const bed = new THREE.Mesh(new THREE.CircleGeometry(1, 72), bedMat);
       bed.rotation.x = -Math.PI / 2;
       bed.position.y = -0.15;
       scene.add(bed);
-      const grid = new THREE.GridHelper(10, 10, 0x26e7ff, 0x1d2b5c);
+      const grid = new THREE.GridHelper(10, 10, 0x61162d, 0xd7c8cd);
       grid.position.y = 0;
       scene.add(grid);
 
-      const mat = new THREE.MeshStandardMaterial({ color: latest.current.color, roughness: 0.58, metalness: 0.02 });
+      const mat = new THREE.MeshStandardMaterial({
+        color: latest.current.color,
+        roughness: 0.58,
+        metalness: 0.02,
+      });
       const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
       mesh.rotation.x = -Math.PI / 2;
       scene.add(mesh);
-      const edgeMat = new THREE.LineBasicMaterial({ color: 0x26e7ff });
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0x61162d });
       const edges = new THREE.LineSegments(new THREE.BufferGeometry(), edgeMat);
       edges.rotation.x = -Math.PI / 2;
       scene.add(edges);
@@ -141,18 +147,42 @@ export function Viewport({ positions, indices, color }: Props) {
         renderer.domElement.remove();
         apiRef.current = null;
       };
-    })();
+    })().catch(() => {
+      if (!dead)
+        setError("The 3D preview could not start. Your dimensions and exports remain available.");
+    });
 
     return () => {
       dead = true;
       cleanup();
     };
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     if (positions.length === 0) return;
     apiRef.current?.setMesh(positions, indices, color);
   }, [positions, indices, color]);
 
-  return <div ref={hostRef} className="h-full w-full touch-none" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={hostRef} className="h-full w-full touch-none" />
+      {error && (
+        <div
+          role="alert"
+          className="absolute inset-0 grid place-content-center gap-3 bg-panel p-6 text-center text-sm"
+        >
+          <p>{error}</p>
+          <button
+            className="min-h-11 rounded-md border border-line px-3"
+            onClick={() => {
+              setError("");
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Retry 3D preview
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }

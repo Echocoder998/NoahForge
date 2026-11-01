@@ -12,6 +12,12 @@ import {
   FolderOpen,
   History,
   Layers3,
+  NotebookPen,
+  Target,
+  ScanLine,
+  Plane,
+  Wrench,
+  Upload,
   Printer,
   Save,
   ShieldCheck,
@@ -27,7 +33,9 @@ import {
   type Bench,
   type BoardView,
   type ProjectSnapshot,
+  captureProject,
 } from "@/lib/lab-store";
+import { parseProjectFile, projectFile } from "@/lib/engineering/project-file";
 import { CHASSIS, chassisById } from "@/lib/robots/chassis";
 import { mcuName } from "@/lib/wire/catalog";
 import { Button } from "@/components/ui/button";
@@ -37,6 +45,11 @@ import { FrameBench } from "./frame-bench";
 import { BoardBench } from "./board-bench";
 import { PrintBench } from "./print-bench";
 import { WireBench } from "./wire-bench";
+import { MissionBench } from "@/components/engineering/mission-bench";
+import { LegBench } from "@/components/engineering/leg-bench";
+import { FlightBench } from "@/components/engineering/flight-bench";
+import { MechanicalBench } from "@/components/engineering/mechanical-bench";
+import { NotebookBench } from "@/components/engineering/notebook-bench";
 
 const WORKSPACES: {
   id: string;
@@ -47,6 +60,51 @@ const WORKSPACES: {
   description: string;
   group: string;
 }[] = [
+  {
+    id: "mission",
+    bench: "mission",
+    label: "Mission & requirements",
+    icon: Target,
+    description:
+      "Define the mission, engineering limits, and evidence needed to verify your design.",
+    group: "Engineering",
+  },
+  {
+    id: "leg",
+    bench: "leg",
+    label: "Legs & gait",
+    icon: ScanLine,
+    description:
+      "Design articulated legs, inspect reachable targets, and evaluate gait support and static loads.",
+    group: "Engineering",
+  },
+  {
+    id: "flight",
+    bench: "flight",
+    label: "Flight sizing",
+    icon: Plane,
+    description:
+      "Build a mass and cost budget, locate the center of mass, and evaluate flight sizing assumptions.",
+    group: "Engineering",
+  },
+  {
+    id: "mechanical",
+    bench: "mechanical",
+    label: "Mechanical assembly",
+    icon: Wrench,
+    description:
+      "Develop mounting geometry, review fit and fasteners, and export printable and CAD reference files.",
+    group: "Engineering",
+  },
+  {
+    id: "notebook",
+    bench: "notebook",
+    label: "Experiment notebook",
+    icon: NotebookPen,
+    description:
+      "Capture decisions, measurements, and revisions. Compare predictions with tests and export a report.",
+    group: "Engineering",
+  },
   {
     id: "design",
     bench: "design",
@@ -110,9 +168,7 @@ const WORKSPACES: {
 ];
 
 function exportSnapshot(snapshot: ProjectSnapshot) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify({ version: 1, ...snapshot }, null, 2)], { type: "application/json" }),
-  );
+  const url = URL.createObjectURL(new Blob([projectFile(snapshot)], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
   link.download = `${snapshot.state.projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "project"}-backup.json`;
@@ -125,9 +181,14 @@ export function Lab() {
   const boardView = useLab((s) => s.boardView);
   const chassis = useLab((s) => s.chassis);
   const projectName = useLab((s) => s.projectName);
+  const projectRevision = useLab((s) => s.projectRevision);
   const mcu = useLab((s) => s.mcu);
   const picked = useLab((s) => s.picked);
   const snapshots = useLab((s) => s.snapshots);
+  const projects = useLab((s) => s.projects);
+  const saveProject = useLab((s) => s.saveProject);
+  const openProject = useLab((s) => s.openProject);
+  const importProject = useLab((s) => s.importProject);
   const setBench = useLab((s) => s.setBench);
   const setBoardView = useLab((s) => s.setBoardView);
   const setProjectName = useLab((s) => s.setProjectName);
@@ -139,6 +200,7 @@ export function Lab() {
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [help, setHelp] = useState(false);
+  const [projectError, setProjectError] = useState("");
   const faults = plan.issues.filter((i) => i.level === "fault").length;
   const cautions = plan.issues.filter((i) => i.level === "caution").length;
   const partCount = Object.values(picked).reduce<number>((sum, n) => sum + (n ?? 0), 1);
@@ -148,6 +210,11 @@ export function Lab() {
 
   useEffect(() => {
     void useLab.persist.rehydrate();
+  }, []);
+  useEffect(() => {
+    const storageIssue = (event: Event) => setNotice((event as CustomEvent<string>).detail);
+    window.addEventListener("noah-forge-storage-error", storageIssue);
+    return () => window.removeEventListener("noah-forge-storage-error", storageIssue);
   }, []);
   useEffect(() => {
     if (!notice) return;
@@ -170,9 +237,15 @@ export function Lab() {
           onClick={() => setBench("design")}
           aria-label="Noah Forge overview"
         >
-          <img src="/logo-mark.png" alt="" width={36} height={36} className="size-9 rounded-md" />
+          <img
+            src="/precision-noah-forge.png"
+            alt="Precision Noah Forge emblem"
+            width={64}
+            height={64}
+            className="precision-logo"
+          />
           <span>
-            Noah Forge<span className="brand-caption">Hardware workspace</span>
+            Noah Forge<span className="brand-caption">Robotics engineering studio</span>
           </span>
         </button>
         <div className="project-heading">
@@ -212,7 +285,7 @@ export function Lab() {
       <div className="forge-layout">
         <aside className="forge-sidebar">
           <nav aria-label="Project workspaces" className="workspace-nav">
-            {["Design", "Build & test"].map((group) => (
+            {["Engineering", "Design", "Build & test"].map((group) => (
               <div className="nav-group" key={group}>
                 <p className="nav-group-label">{group}</p>
                 {WORKSPACES.filter((w) => w.group === group).map((item) => {
@@ -265,6 +338,28 @@ export function Lab() {
           </div>
         </aside>
         <main id="workspace" className="forge-workspace" tabIndex={-1}>
+          <label className="mb-4 block text-xs font-medium text-dust lg:hidden">
+            Workspace
+            <select
+              aria-label="Choose workspace"
+              value={current.id}
+              onChange={(event) => {
+                const selected = WORKSPACES.find((item) => item.id === event.target.value);
+                if (selected) navigate(selected);
+              }}
+              className="mt-1 min-h-11 w-full rounded-md border border-line bg-panel px-3 text-sm text-paper"
+            >
+              {["Engineering", "Design", "Build & test"].map((group) => (
+                <optgroup key={group} label={group}>
+                  {WORKSPACES.filter((item) => item.group === group).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
           <div className="workspace-heading">
             <div className="min-w-0">
               <p className="workspace-eyebrow">PROJECT / {current.group.toUpperCase()}</p>
@@ -282,9 +377,10 @@ export function Lab() {
             <section className="workflow-guide">
               <h2 className="font-medium">From idea to prototype</h2>
               <p className="mt-1 text-sm text-dust">
-                Start with a template or describe an idea. Choose components, follow the schematic,
-                then review the layout and checks. Use the assembly, printable parts, and firmware
-                tools when you are ready to prototype.
+                Define your mission and requirements. Develop legs, flight sizing, and mounting
+                geometry; choose electronics and review the schematic. Record predicted and measured
+                results in the notebook, then export a report and project file. All original tools
+                remain available.
               </p>
               <p className="mt-2 text-xs text-dust">
                 Board exports are SVG references and a CSV parts list. Manufacturing files and
@@ -303,6 +399,11 @@ export function Lab() {
           {bench === "wire" && <WireBench />}
           {bench === "board" && <BoardBench />}
           {bench === "code" && <CodeBench />}
+          {bench === "mission" && <MissionBench key={projectRevision} />}
+          {bench === "leg" && <LegBench key={projectRevision} />}
+          {bench === "flight" && <FlightBench key={projectRevision} />}
+          {bench === "mechanical" && <MechanicalBench key={projectRevision} />}
+          {bench === "notebook" && <NotebookBench key={projectRevision} />}
           <footer className="workspace-footer">
             Prototype workspace. Review the wiring, part specifications, and firmware before
             powering hardware. Keep propellers off during bench tests.
@@ -327,6 +428,102 @@ export function Lab() {
                 </Button>
               </Dialog.Close>
             </div>
+            <section
+              className="mt-6 rounded-xl border border-line p-4"
+              aria-label="Portable projects"
+            >
+              <h2 className="text-sm font-semibold">Your engineering projects</h2>
+              <p className="mt-1 text-xs text-dust">
+                Save up to 30 named projects here. Project files include the active machine,
+                electronics, printable dimensions, requirements, calculations, and notebook.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  onClick={() => {
+                    saveProject();
+                    setNotice("Named project saved in this browser.");
+                  }}
+                >
+                  <Save className="size-4" aria-hidden />
+                  Save named project
+                </Button>
+                <Button onClick={() => exportSnapshot(captureProject())}>
+                  <Download className="size-4" aria-hidden />
+                  Export project
+                </Button>
+                <label
+                  className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line px-3 text-sm font-medium"
+                  htmlFor="import-project"
+                >
+                  <Upload className="size-4" aria-hidden />
+                  Import project
+                </label>
+                <input
+                  id="import-project"
+                  className="sr-only"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={async (event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (!file) return;
+                    try {
+                      if (file.size > 4_000_000)
+                        throw new Error("Project files must be smaller than 4 MB.");
+                      const imported = parseProjectFile(await file.text());
+                      importProject(imported);
+                      setBench("mission");
+                      setProjectsOpen(false);
+                      setProjectError("");
+                      setNotice("Project imported. Your previous setup was backed up.");
+                    } catch (error) {
+                      setProjectError(
+                        error instanceof Error ? error.message : "Could not import this project.",
+                      );
+                    }
+                  }}
+                />
+              </div>
+              {projectError && (
+                <p role="alert" className="mt-3 text-sm text-magenta">
+                  {projectError}
+                </p>
+              )}
+              {projects.length === 0 ? (
+                <p className="mt-3 text-xs text-dust">
+                  Save your first named project to keep a course or personal build separate.
+                </p>
+              ) : (
+                <ul className="mt-3 grid gap-2">
+                  {projects.map((saved) => (
+                    <li
+                      key={saved.state.projectId}
+                      className="flex min-w-0 items-center gap-2 border-t border-line pt-2"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm">
+                        {saved.state.projectName}
+                      </span>
+                      <Button
+                        onClick={() => {
+                          openProject(saved.state.projectId);
+                          setProjectsOpen(false);
+                          setNotice("Named project opened. Previous setup backed up.");
+                        }}
+                      >
+                        Open project
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        aria-label={`Export ${saved.state.projectName}`}
+                        onClick={() => exportSnapshot(saved)}
+                      >
+                        <Download className="size-4" aria-hidden />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
             <h2 className="mt-6 flex items-center gap-2 text-sm font-semibold">
               <Box className="size-4" aria-hidden />
               Start from a template
