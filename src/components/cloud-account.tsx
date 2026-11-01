@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { authClient } from "@/lib/auth/client";
+import { useEffect, useState } from "react";
+import { authClient, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Lab } from "./lab/shell";
@@ -9,6 +9,10 @@ export function CloudAccount() {
   const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("error"))
+      setError("Google sign-in did not complete. Try again or use email and password.");
+  }, []);
   if (isPending)
     return (
       <main className="p-8" role="status">
@@ -27,6 +31,24 @@ export function CloudAccount() {
           Your projects, designs, notes, and restore points are saved privately in the cloud and
           available on your other devices.
         </p>
+        <Button
+          className="mb-4 w-full"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              await signIn("grok-google", { callbackURL: "/", errorCallbackURL: "/?error=google" });
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Unable to start Google sign-in.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Continue with Google
+        </Button>
+        <p className="mb-4 text-center text-xs text-dust">or continue with email</p>
         <form
           className="grid gap-4"
           onSubmit={async (event) => {
@@ -83,15 +105,15 @@ export function CloudAccount() {
               required
             />
           </label>
-          {error && (
-            <p role="alert" className="text-sm text-magenta">
-              {error}
-            </p>
-          )}
           <Button disabled={busy} type="submit">
             {busy ? "Please wait…" : signup ? "Create account" : "Sign in"}
           </Button>
         </form>
+        {error && (
+          <p role="alert" className="mt-4 text-sm text-magenta">
+            {error}
+          </p>
+        )}
         <Button
           className="mt-4"
           variant="ghost"
