@@ -99,17 +99,13 @@
   .forge-brand {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: center;
     width: 12.5rem;
     flex-shrink: 0;
-    text-align: left;
-    font-size: 1rem;
-    font-weight: 600;
-    letter-spacing: -0.025em;
   }
   .precision-logo {
-    width: 4rem;
-    height: 4rem;
+    width: 7rem;
+    height: 7rem;
     object-fit: contain;
     flex-shrink: 0;
   }
@@ -129,14 +125,6 @@
     background: var(--color-hangar);
     color: var(--color-paper);
     font-size: 0.875rem;
-  }
-  .brand-caption {
-    display: block;
-    margin-top: 0.125rem;
-    color: var(--color-dust);
-    font-size: 0.6875rem;
-    font-weight: 400;
-    letter-spacing: 0;
   }
   .project-heading {
     flex: 1;
@@ -367,6 +355,11 @@
     }
     .forge-brand {
       flex: 1;
+      justify-content: flex-start;
+    }
+    .precision-logo {
+      width: 6rem;
+      height: 6rem;
     }
     .project-heading {
       order: 3;

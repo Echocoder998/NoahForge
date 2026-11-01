@@ -290,13 +290,10 @@ export function Lab() {
           <img
             src="/precision-noah-forge.png"
             alt="Precision Noah Forge emblem"
-            width={64}
-            height={64}
+            width={112}
+            height={112}
             className="precision-logo"
           />
-          <span>
-            Noah Forge<span className="brand-caption">Robotics engineering studio</span>
-          </span>
         </button>
         <div className="project-heading">
           <label htmlFor="project-name" className="sr-only">
