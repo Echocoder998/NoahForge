@@ -1,4 +1,11 @@
 import { useEffect, useState } from "react";
+import { UserButton } from "@/lib/auth/gates";
+import {
+  cloudStatus,
+  flushCloudSave,
+  hasUnsavedChanges,
+  readLegacyWorkspace,
+} from "@/lib/engineering/project-storage";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowRight,
@@ -201,6 +208,9 @@ export function Lab() {
   const [notice, setNotice] = useState("");
   const [help, setHelp] = useState(false);
   const [projectError, setProjectError] = useState("");
+  const [cloud, setCloud] = useState(cloudStatus);
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const faults = plan.issues.filter((i) => i.level === "fault").length;
   const cautions = plan.issues.filter((i) => i.level === "caution").length;
   const partCount = Object.values(picked).reduce<number>((sum, n) => sum + (n ?? 0), 1);
@@ -209,7 +219,25 @@ export function Lab() {
     WORKSPACES[0]!;
 
   useEffect(() => {
-    void useLab.persist.rehydrate();
+    const status = (event: Event) => setCloud((event as CustomEvent<string>).detail);
+    const leaving = (event: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("noah-forge-cloud-status", status);
+    window.addEventListener("beforeunload", leaving);
+    void Promise.resolve(useLab.persist.rehydrate())
+      .then(() => {
+        if (!useLab.persist.hasHydrated()) throw new Error("Unable to load cloud workspace.");
+        setReady(true);
+      })
+      .catch(() => setLoadError(true));
+    return () => {
+      window.removeEventListener("noah-forge-cloud-status", status);
+      window.removeEventListener("beforeunload", leaving);
+    };
   }, []);
   useEffect(() => {
     const storageIssue = (event: Event) => setNotice((event as CustomEvent<string>).detail);
@@ -224,6 +252,28 @@ export function Lab() {
   const navigate = (item: (typeof WORKSPACES)[number]) => {
     if (item.view) setBoardView(item.view);
     setBench(item.bench);
+  };
+
+  if (!ready)
+    return (
+      <main className="p-8" role="status">
+        <p>
+          {loadError
+            ? "Could not load your cloud workspace. Your saved data has not been changed."
+            : "Loading your cloud workspace…"}
+        </p>
+        {loadError && <Button onClick={() => window.location.reload()}>Retry loading</Button>}
+        <UserButton />
+      </main>
+    );
+
+  const confirmSave = async (message: string) => {
+    try {
+      await flushCloudSave();
+      setNotice(message);
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : "Cloud save failed.");
+    }
   };
 
   return (
@@ -260,15 +310,19 @@ export function Lab() {
             placeholder="Untitled project"
           />
           <span className="project-meta">
-            {activeDesign?.name ?? chassisById(chassis).name} <span aria-hidden>·</span> Saved in
-            this browser
+            {activeDesign?.name ?? chassisById(chassis).name} <span aria-hidden>·</span>{" "}
+            <span role="status">{cloud}</span>
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <UserButton />
+          {cloud.startsWith("Not saved") && (
+            <Button onClick={() => void confirmSave("Saved to cloud.")}>Retry save</Button>
+          )}
           <Button
             onClick={() => {
               saveSnapshot();
-              setNotice("Restore point saved in this browser.");
+              void confirmSave("Restore point saved to cloud.");
             }}
             aria-label="Save restore point"
           >
@@ -441,7 +495,7 @@ export function Lab() {
                 <Button
                   onClick={() => {
                     saveProject();
-                    setNotice("Named project saved in this browser.");
+                    void confirmSave("Named project saved to cloud.");
                   }}
                 >
                   <Save className="size-4" aria-hidden />
@@ -450,6 +504,34 @@ export function Lab() {
                 <Button onClick={() => exportSnapshot(captureProject())}>
                   <Download className="size-4" aria-hidden />
                   Export project
+                </Button>
+                <Button
+                  onClick={async () => {
+                    try {
+                      const legacy = await readLegacyWorkspace();
+                      if (!legacy)
+                        throw new Error("No previous browser projects found on this device.");
+                      const state = JSON.parse(legacy).state;
+                      const saved = [...(state.projects || []), ...(state.snapshots || [])];
+                      const active = {
+                        id: state.projectId || "legacy",
+                        savedAt: Date.now(),
+                        state,
+                        design:
+                          state.customs?.find((d: { id: string }) => d.id === state.customId) ??
+                          null,
+                      };
+                      const valid = [...saved, active].map((p) =>
+                        parseProjectFile(JSON.stringify({ version: 2, ...p })),
+                      );
+                      for (const project of valid) importProject(project);
+                      await confirmSave("Previous browser projects imported and saved to cloud.");
+                    } catch (error) {
+                      setProjectError(error instanceof Error ? error.message : "Import failed.");
+                    }
+                  }}
+                >
+                  Import previous browser saves
                 </Button>
                 <label
                   className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line px-3 text-sm font-medium"
@@ -556,7 +638,7 @@ export function Lab() {
               <Button
                 onClick={() => {
                   saveSnapshot();
-                  setNotice("Restore point saved in this browser.");
+                  void confirmSave("Restore point saved to cloud.");
                 }}
               >
                 <Save className="size-4" aria-hidden />
@@ -564,8 +646,8 @@ export function Lab() {
               </Button>
             </div>
             <p className="mt-1 text-xs text-dust">
-              The 12 most recent setups stay in this browser. Download a backup for a copy outside
-              the browser.
+              The 12 most recent setups save to your cloud workspace. Export a project for an
+              additional backup.
             </p>
             {snapshots.length === 0 ? (
               <p className="mt-3 rounded-md border border-line p-4 text-sm text-dust">

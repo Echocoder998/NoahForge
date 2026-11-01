@@ -82,7 +82,7 @@ export function CodeBench() {
             className="mt-2 w-full resize-y rounded-md border border-line bg-hangar px-3 py-3 text-sm outline-none"
           />
         </label>
-        <p className="mt-2 text-xs text-dust">Notes stay in this browser.</p>
+        <p className="mt-2 text-xs text-dust">Notes save to your cloud workspace.</p>
       </section>
       <section className="min-w-0 overflow-hidden rounded-md border border-line bg-hangar">
         <pre className="max-h-stage overflow-auto p-4 font-mono text-xs leading-relaxed text-paper">

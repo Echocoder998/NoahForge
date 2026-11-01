@@ -633,7 +633,7 @@ export function DesignBench() {
           </summary>
           {customs.length === 0 ? (
             <p className="mt-2 text-xs text-dust">
-              AI drafts appear here after a design request. They stay in this browser.
+              AI drafts appear here after a design request and save to your cloud workspace.
             </p>
           ) : (
             <ul className="mt-2 grid gap-2">

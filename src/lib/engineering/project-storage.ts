@@ -1,98 +1,114 @@
 import type { StateStorage } from "zustand/middleware";
+import { readWorkspace, writeWorkspace } from "./cloud-workspace";
 
-let database: Promise<IDBDatabase> | undefined;
-let lastWrite = 0;
-const openDatabase = () =>
-  (database ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open("noah-forge-projects", 1);
-    request.onupgradeneeded = () => request.result.createObjectStore("projects");
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      database = undefined;
-      reject(request.error);
-    };
-  }));
-async function readDatabase(key: string): Promise<string | null> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const request = db.transaction("projects").objectStore("projects").get(key);
-    request.onsuccess = () => resolve(typeof request.result === "string" ? request.result : null);
-    request.onerror = () => reject(request.error);
-  });
-}
-async function writeDatabase(key: string, value: string | null): Promise<void> {
-  const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("projects", "readwrite");
-    const store = tx.objectStore("projects");
-    if (value === null) store.delete(key);
-    else store.put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-}
-const revision = (value: string | null) => {
-  try {
-    return JSON.parse(value || "null")?._savedAt || 0;
-  } catch {
-    return -1;
+let revision = 0;
+let loaded = false;
+let pending: string | null = null;
+let running: Promise<void> | null = null;
+let timer: ReturnType<typeof setTimeout> | undefined;
+let status = "Loading cloud workspace…";
+const report = (message: string) => {
+  status = message;
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("noah-forge-cloud-status", { detail: message }));
+};
+export const cloudStatus = () => status;
+export const hasUnsavedChanges = () => pending !== null || running !== null;
+
+/** Resolves only after the latest queued state is acknowledged by Postgres. */
+export async function flushCloudSave(): Promise<void> {
+  clearTimeout(timer);
+  if (running) {
+    await running;
+    return flushCloudSave();
   }
-};
-const issue = () =>
-  window.dispatchEvent(
-    new CustomEvent("noah-forge-storage-error", {
-      detail:
-        "Browser storage is unavailable. Keep this page open and export your project to preserve your work.",
-    }),
-  );
+  if (!loaded) throw new Error("Cloud workspace has not loaded. Reload before saving.");
+  if (pending === null) return;
+  running = (async () => {
+    while (pending !== null) {
+      const payload: string = pending;
+      report("Saving to cloud…");
+      const result = await writeWorkspace({ data: { payload, revision } });
+      revision = result.revision;
+      if (pending === payload) pending = null;
+    }
+    report("Saved to cloud");
+  })();
+  try {
+    await running;
+  } catch (error) {
+    report(
+      `Not saved: ${error instanceof Error ? error.message : "Connection failed. Retry saving."}`,
+    );
+    throw error;
+  } finally {
+    running = null;
+  }
+}
 
-/** IndexedDB holds complete projects/photos; small legacy saves remain portable. */
+/** Cloud is the only save destination. No silent browser fallback. */
 export const projectStorage: StateStorage = {
-  async getItem(key) {
-    let local: string | null = null;
-    try {
-      local = localStorage.getItem(key);
-    } catch {
-      /* IDB can still work. */
-    }
-    try {
-      const stored = await readDatabase(key);
-      return revision(local) > revision(stored) || !stored ? local : stored;
-    } catch {
-      return local;
-    }
+  async getItem() {
+    loaded = false;
+    const result = await readWorkspace();
+    revision = result.revision;
+    loaded = true;
+    report(result.payload ? "Saved to cloud" : "Cloud workspace ready");
+    return result.payload;
   },
-  async setItem(key, value) {
-    const stamped = JSON.stringify({
-      ...JSON.parse(value),
-      _savedAt: (lastWrite = Math.max(Date.now(), lastWrite + 1)),
-    });
-    let mirrored = false;
-    try {
-      if (stamped.length < 1_500_000) {
-        localStorage.setItem(key, stamped);
-        mirrored = true;
-      } else localStorage.removeItem(key);
-    } catch {
-      /* Large projects are stored in IndexedDB. */
-    }
-    try {
-      await writeDatabase(key, stamped);
-    } catch {
-      if (!mirrored) issue();
-    }
+  setItem(_key, value) {
+    if (!loaded) return;
+    pending = value;
+    report("Unsaved changes");
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      void flushCloudSave().catch(() => undefined);
+    }, 700);
   },
-  async removeItem(key) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      /* continue */
-    }
-    try {
-      await writeDatabase(key, null);
-    } catch {
-      issue();
-    }
+  removeItem() {
+    throw new Error("Export your workspace before replacing it.");
   },
 };
+
+/** Read-only import from the previous browser-based version. */
+export async function readLegacyWorkspace(): Promise<string | null> {
+  let local: string | null = null;
+  try {
+    local = localStorage.getItem("airframe-lab");
+  } catch {
+    /* optional legacy source */
+  }
+  const stored = await new Promise<string | null>((resolve) => {
+    const request = indexedDB.open("noah-forge-projects", 1);
+    request.onerror = () => resolve(null);
+    request.onupgradeneeded = () => {
+      request.transaction?.abort();
+      resolve(null);
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("projects")) {
+        db.close();
+        resolve(null);
+        return;
+      }
+      const get = db.transaction("projects").objectStore("projects").get("airframe-lab");
+      get.onsuccess = () => {
+        db.close();
+        resolve(typeof get.result === "string" ? get.result : null);
+      };
+      get.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    };
+  });
+  const time = (value: string | null) => {
+    try {
+      return JSON.parse(value || "null")?._savedAt || 0;
+    } catch {
+      return -1;
+    }
+  };
+  return !stored || time(local) > time(stored) ? local : stored;
+}

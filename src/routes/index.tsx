@@ -1,4 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Lab } from "@/components/lab/shell";
+import { CloudAccount } from "@/components/cloud-account";
 
-export const Route = createFileRoute("/")({ component: Lab });
+export const Route = createFileRoute("/")({ component: CloudAccount });
