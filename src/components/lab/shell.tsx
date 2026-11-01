@@ -54,7 +54,9 @@ import { PrintBench } from "./print-bench";
 import { WireBench } from "./wire-bench";
 import { MissionBench } from "@/components/engineering/mission-bench";
 import { LegBench } from "@/components/engineering/leg-bench";
-import { FlightBench } from "@/components/engineering/flight-bench";
+import { CalculatorHub } from "@/components/engineering/calculator-hub";
+import { ProjectEstimates } from "@/components/engineering/project-estimates";
+import { archetypeLabels, isAerial, isWalking, safetyNotice } from "@/lib/engineering/archetypes";
 import { MechanicalBench } from "@/components/engineering/mechanical-bench";
 import { NotebookBench } from "@/components/engineering/notebook-bench";
 
@@ -185,6 +187,52 @@ function exportSnapshot(snapshot: ProjectSnapshot) {
 
 export function Lab() {
   const bench = useLab((s) => s.bench);
+  const archetype = useLab((s) => s.engineering.archetype);
+  const workspaces = WORKSPACES.filter((w) => w.id !== "leg" || isWalking(archetype))
+    .map((w) =>
+      w.id === "flight"
+        ? {
+            ...w,
+            label: isAerial(archetype)
+              ? "Flight sizing"
+              : archetype === "rover"
+                ? "Drivetrain & traction"
+                : "Actuation & kinematics",
+            description:
+              "Review archetype-specific loads, power and runtime with the shared mass and cost budget.",
+          }
+        : w,
+    )
+    .concat([
+      {
+        id: "calculators",
+        bench: "calculators" as Bench,
+        label: "Engineering calculators",
+        icon: Wrench,
+        description: "Calculate and bind sizing results to project budgets and BOM.",
+        group: "Engineering",
+      },
+      ...(isAerial(archetype)
+        ? [
+            {
+              id: "propulsion",
+              bench: "propulsion" as Bench,
+              label: "Propulsion & motors",
+              icon: Plane,
+              description: "Size motors, thrust and battery endurance.",
+              group: "Engineering",
+            },
+            {
+              id: "aerodynamics",
+              bench: "aerodynamics" as Bench,
+              label: "Aerodynamics",
+              icon: Plane,
+              description: "Review aerodynamic assumptions for this aircraft type.",
+              group: "Engineering",
+            },
+          ]
+        : []),
+    ]);
   const boardView = useLab((s) => s.boardView);
   const chassis = useLab((s) => s.chassis);
   const projectName = useLab((s) => s.projectName);
@@ -197,6 +245,13 @@ export function Lab() {
   const openProject = useLab((s) => s.openProject);
   const importProject = useLab((s) => s.importProject);
   const setBench = useLab((s) => s.setBench);
+  useEffect(() => {
+    if (
+      (bench === "leg" && !isWalking(archetype)) ||
+      (["propulsion", "aerodynamics"].includes(bench) && !isAerial(archetype))
+    )
+      setBench("mission");
+  }, [archetype, bench, setBench]);
   const setBoardView = useLab((s) => s.setBoardView);
   const setProjectName = useLab((s) => s.setProjectName);
   const setChassis = useLab((s) => s.setChassis);
@@ -215,10 +270,12 @@ export function Lab() {
   const cautions = plan.issues.filter((i) => i.level === "caution").length;
   const partCount = Object.values(picked).reduce<number>((sum, n) => sum + (n ?? 0), 1);
   const current =
-    WORKSPACES.find((w) => w.bench === bench && (!w.view || w.view === boardView)) ??
-    WORKSPACES[0]!;
+    workspaces.find((w) => w.bench === bench && (!w.view || w.view === boardView)) ??
+    workspaces[0]!;
 
   useEffect(() => {
+    let active = true;
+    setLoadError(false);
     const status = (event: Event) => setCloud((event as CustomEvent<string>).detail);
     const leaving = (event: BeforeUnloadEvent) => {
       if (hasUnsavedChanges()) {
@@ -230,11 +287,15 @@ export function Lab() {
     window.addEventListener("beforeunload", leaving);
     void Promise.resolve(useLab.persist.rehydrate())
       .then(() => {
+        if (!active) return;
         if (!useLab.persist.hasHydrated()) throw new Error("Unable to load cloud workspace.");
         setReady(true);
       })
-      .catch(() => setLoadError(true));
+      .catch(() => {
+        if (active) setLoadError(true);
+      });
     return () => {
+      active = false;
       window.removeEventListener("noah-forge-cloud-status", status);
       window.removeEventListener("beforeunload", leaving);
     };
@@ -307,7 +368,7 @@ export function Lab() {
             placeholder="Untitled project"
           />
           <span className="project-meta">
-            {activeDesign?.name ?? chassisById(chassis).name} <span aria-hidden>·</span>{" "}
+            {activeDesign?.name ?? archetypeLabels[archetype]} <span aria-hidden>·</span>{" "}
             <span role="status">{cloud}</span>
           </span>
         </div>
@@ -339,24 +400,26 @@ export function Lab() {
             {["Engineering", "Design", "Build & test"].map((group) => (
               <div className="nav-group" key={group}>
                 <p className="nav-group-label">{group}</p>
-                {WORKSPACES.filter((w) => w.group === group).map((item) => {
-                  const Icon = item.icon;
-                  const on = current.id === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      aria-current={on ? "page" : undefined}
-                      onClick={() => navigate(item)}
-                      className={`workspace-link ${on ? "is-active" : ""}`}
-                    >
-                      <Icon className="size-4 shrink-0" aria-hidden />
-                      <span>{item.label}</span>
-                      {item.id === "wire" && faults > 0 && (
-                        <span className="nav-count">{faults}</span>
-                      )}
-                    </button>
-                  );
-                })}
+                {workspaces
+                  .filter((w) => w.group === group)
+                  .map((item) => {
+                    const Icon = item.icon;
+                    const on = current.id === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        aria-current={on ? "page" : undefined}
+                        onClick={() => navigate(item)}
+                        className={`workspace-link ${on ? "is-active" : ""}`}
+                      >
+                        <Icon className="size-4 shrink-0" aria-hidden />
+                        <span>{item.label}</span>
+                        {item.id === "wire" && faults > 0 && (
+                          <span className="nav-count">{faults}</span>
+                        )}
+                      </button>
+                    );
+                  })}
               </div>
             ))}
           </nav>
@@ -366,6 +429,7 @@ export function Lab() {
             <p className="mt-1 text-xs text-dust">
               {partCount} components · {plan.pins.length} assigned pins
             </p>
+            <ProjectEstimates compact />
             <button className="check-link" onClick={() => setBench("wire")}>
               {faults ? (
                 <TriangleAlert className="size-4 text-magenta" aria-hidden />
@@ -395,18 +459,20 @@ export function Lab() {
               aria-label="Choose workspace"
               value={current.id}
               onChange={(event) => {
-                const selected = WORKSPACES.find((item) => item.id === event.target.value);
+                const selected = workspaces.find((item) => item.id === event.target.value);
                 if (selected) navigate(selected);
               }}
               className="mt-1 min-h-11 w-full rounded-md border border-line bg-panel px-3 text-sm text-paper"
             >
               {["Engineering", "Design", "Build & test"].map((group) => (
                 <optgroup key={group} label={group}>
-                  {WORKSPACES.filter((item) => item.group === group).map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
+                  {workspaces
+                    .filter((item) => item.group === group)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
                 </optgroup>
               ))}
             </select>
@@ -451,13 +517,15 @@ export function Lab() {
           {bench === "board" && <BoardBench />}
           {bench === "code" && <CodeBench />}
           {bench === "mission" && <MissionBench key={projectRevision} />}
-          {bench === "leg" && <LegBench key={projectRevision} />}
-          {bench === "flight" && <FlightBench key={projectRevision} />}
+          {bench === "leg" && isWalking(archetype) && <LegBench key={projectRevision} />}
+          {["flight", "calculators", "propulsion", "aerodynamics"].includes(bench) && (
+            <CalculatorHub key={`${projectRevision}-${archetype}-${bench}`} section={bench} />
+          )}
           {bench === "mechanical" && <MechanicalBench key={projectRevision} />}
           {bench === "notebook" && <NotebookBench key={projectRevision} />}
           <footer className="workspace-footer">
             Prototype workspace. Review the wiring, part specifications, and firmware before
-            powering hardware. Keep propellers off during bench tests.
+            powering hardware. {safetyNotice(archetype)}
           </footer>
         </main>
       </div>

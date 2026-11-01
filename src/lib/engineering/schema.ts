@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { newEngineeringProject, type EngineeringProject } from "./types";
+import {
+  newEngineeringProject,
+  ROBOT_ARCHETYPES,
+  type EngineeringProject,
+  type RobotArchetype,
+} from "./types";
 
 const text = z.string().max(12000);
 const number = z.number().finite();
@@ -7,6 +12,31 @@ const positive = number.min(0).max(1e9);
 const nonnegative = number.min(0).max(1e9);
 const id = z.string().min(1).max(120);
 export const engineeringSchema = z.object({
+  archetype: z.enum(ROBOT_ARCHETYPES).default("fixed_wing"),
+  sizing: z
+    .object({
+      rotorDiameterMm: number.min(1).max(3000),
+      servoContinuousA: nonnegative,
+      servoStallA: nonnegative,
+      actuatorMassG: nonnegative,
+      actuatorCostUsd: nonnegative,
+      motorMassG: nonnegative,
+      motorCostUsd: nonnegative,
+      additionalActuators: number.int().min(0).max(100),
+      busLimitA: nonnegative,
+      efficiency: number.min(0.01).max(1),
+      driveMotors: number.int().min(1).max(16),
+      wheelRadiusMm: number.min(1).max(2000),
+      gearRatio: number.min(0.1).max(1000),
+      motorRpm: nonnegative,
+      slopeDeg: number.min(0).max(80),
+      rollingResistance: number.min(0).max(1),
+      tractionCoefficient: number.min(0).max(2),
+      motorIdleA: nonnegative,
+      targetRangeM: nonnegative,
+      autoBom: z.boolean(),
+    })
+    .default(newEngineeringProject().sizing),
   mission: z.object({
     summary: text,
     terrain: text,
@@ -44,7 +74,7 @@ export const engineeringSchema = z.object({
     yawMinDeg: number,
     yawMaxDeg: number,
     joints: z.union([z.literal(2), z.literal(3)]),
-    legCount: z.union([z.literal(4), z.literal(6), z.literal(8)]),
+    legCount: z.union([z.literal(2), z.literal(4), z.literal(6), z.literal(8)]),
     bodyLengthMm: positive,
     bodyWidthMm: positive,
     strideMm: nonnegative,
@@ -135,11 +165,16 @@ export const engineeringSchema = z.object({
 });
 
 /** Legacy projects receive new sections without losing existing values. */
-export function migrateEngineering(value: unknown): EngineeringProject {
-  const defaults = newEngineeringProject();
+export function migrateEngineering(
+  value: unknown,
+  fallback: RobotArchetype = "fixed_wing",
+): EngineeringProject {
+  const defaults = newEngineeringProject(fallback);
   if (!value || typeof value !== "object") return defaults;
   const old = value as Partial<EngineeringProject>;
   const merged = {
+    archetype: old.archetype ?? fallback,
+    sizing: { ...defaults.sizing, ...old.sizing },
     mission: { ...defaults.mission, ...old.mission },
     leg: { ...defaults.leg, ...old.leg },
     flight: { ...defaults.flight, ...old.flight },
@@ -150,8 +185,13 @@ export function migrateEngineering(value: unknown): EngineeringProject {
   if (parsed.success) return parsed.data;
   // Recover individual fields; one malformed legacy value must not erase a notebook.
   const recovered = defaults;
-  for (const section of ["mission", "leg", "flight", "assembly"] as const) {
-    const fields = engineeringSchema.shape[section].shape as Record<string, z.ZodType>;
+  recovered.archetype = z.enum(ROBOT_ARCHETYPES).safeParse(merged.archetype).data ?? fallback;
+  for (const section of ["mission", "leg", "flight", "assembly", "sizing"] as const) {
+    const fields = (
+      section === "sizing"
+        ? engineeringSchema.shape.sizing.unwrap().shape
+        : engineeringSchema.shape[section].shape
+    ) as Record<string, z.ZodType>;
     const source = merged[section] as unknown as Record<string, unknown>;
     const target = recovered[section] as unknown as Record<string, unknown>;
     for (const [key, validator] of Object.entries(fields)) {

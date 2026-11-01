@@ -532,11 +532,12 @@ export function LegBench() {
               value={String(config.legCount)}
               onChange={(value) =>
                 patch({
-                  legCount: Number(value) as 4 | 6 | 8,
+                  legCount: Number(value) as 2 | 4 | 6 | 8,
                   ...(value !== "6" && config.gait === "tripod" ? { gait: "wave" as const } : {}),
                 })
               }
               options={[
+                ["2", "2 legs (static model)"],
                 ["4", "4 legs"],
                 ["6", "6 legs"],
                 ["8", "8 legs"],

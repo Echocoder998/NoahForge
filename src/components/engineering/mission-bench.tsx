@@ -1,3 +1,6 @@
+import { ROBOT_ARCHETYPES, type RobotArchetype } from "@/lib/engineering/types";
+import { archetypeLabels } from "@/lib/engineering/archetypes";
+import { ProjectEstimates } from "./project-estimates";
 import { useState } from "react";
 import {
   ArrowRight,
@@ -26,7 +29,7 @@ const id = () => `r${Date.now().toString(36)}${Math.random().toString(36).slice(
 
 export function MissionBench() {
   const mission = useLab((s) => s.engineering.mission);
-  const flight = useLab((s) => s.engineering.flight);
+  const engineering = useLab((s) => s.engineering);
   const patchEngineering = useLab((s) => s.patchEngineering);
   const setBench = useLab((s) => s.setBench);
   const [removed, setRemoved] = useState<Requirement | null>(null);
@@ -61,14 +64,6 @@ export function MissionBench() {
         },
       ],
     });
-  const mass = flight.massItems.reduce((sum, item) => sum + item.massG, 0);
-  const cost = flight.massItems.reduce((sum, item) => sum + item.costUsd, 0);
-  const hoverCurrent =
-    flight.rotorCount * flight.hoverCurrentPerMotorA + flight.electronicsCurrentA;
-  const runtime =
-    hoverCurrent > 0
-      ? (((flight.batteryMah / 1000) * flight.usableFraction) / hoverCurrent) * 60
-      : null;
   const completed = mission.requirements.filter(
     (requirement) => requirementStatus(requirement) === "met",
   ).length;
@@ -90,6 +85,21 @@ export function MissionBench() {
           <p className="mt-1 text-sm text-dust">
             Define what the robot must accomplish and how you will prove it.
           </p>
+          <label className="mt-4 block text-sm font-medium">
+            Robot archetype
+            <select
+              aria-label="Robot archetype"
+              className={`${field} mt-2`}
+              value={engineering.archetype}
+              onChange={(e) => patchEngineering({ archetype: e.target.value as RobotArchetype })}
+            >
+              {ROBOT_ARCHETYPES.map((a) => (
+                <option key={a} value={a}>
+                  {archetypeLabels[a]}
+                </option>
+              ))}
+            </select>
+          </label>
           <label htmlFor="mission-summary" className="mt-5 block text-sm font-medium">
             Mission / problem statement
           </label>
@@ -381,28 +391,14 @@ export function MissionBench() {
         <section className="rounded-xl border border-line bg-panel p-4 sm:p-5">
           <h2 className="text-base font-semibold">Planning estimates</h2>
           <p className="mt-1 text-xs text-dust">
-            Calculated from the Flight sizing mass and power inputs. These are separate from
-            recorded verification results.
+            Calculated from this archetype's shared mass, battery and sizing inputs. These are
+            separate from recorded verification results.
           </p>
-          <dl className="mt-4 space-y-4">
-            <Estimate
-              label="Mass / limit"
-              value={`${mass.toFixed(0)} / ${mission.maxMassG.toFixed(0)} g`}
-              over={mass > mission.maxMassG}
-            />
-            <Estimate
-              label="Cost / budget"
-              value={`$${cost.toFixed(2)} / $${mission.budgetUsd.toFixed(2)}`}
-              over={cost > mission.budgetUsd}
-            />
-            <Estimate
-              label="Hover runtime / target"
-              value={`${runtime === null ? "Undefined" : runtime.toFixed(1)} / ${mission.targetRuntimeMin.toFixed(1)} min`}
-              over={runtime === null || runtime < mission.targetRuntimeMin}
-            />
-          </dl>
-          <Button className="mt-5 w-full" onClick={() => setBench("flight")}>
-            Review flight inputs
+          <div className="mt-4 space-y-4">
+            <ProjectEstimates />
+          </div>
+          <Button className="mt-5 w-full" onClick={() => setBench("calculators")}>
+            Review sizing inputs
             <ArrowRight className="size-4" aria-hidden />
           </Button>
         </section>

@@ -377,3 +377,21 @@ describe("browser-local persistence", { concurrency: false }, () => {
     assert.equal(useLab.getState().notes, "Persisted notes");
   });
 });
+
+describe("engineering archetype persistence", { concurrency: false }, () => {
+  it("retains each named project's archetype and calculator inputs", () => {
+    const actions = useLab.getState();
+    actions.patchEngineering({
+      archetype: "hexapod",
+      sizing: { ...useLab.getState().engineering.sizing, actuatorMassG: 19 },
+    });
+    const first = useLab.getState().projectId;
+    actions.saveProject();
+    actions.setChassis("drone");
+    assert.equal(useLab.getState().engineering.archetype, "multirotor");
+    actions.saveProject();
+    actions.openProject(first);
+    assert.equal(useLab.getState().engineering.archetype, "hexapod");
+    assert.equal(useLab.getState().engineering.sizing.actuatorMassG, 19);
+  });
+});

@@ -1,3 +1,4 @@
+import { archetypeForChassis } from "./archetypes";
 import { z } from "zod";
 import { DesignOutput, sanitizeDesign } from "../robots/design";
 import { CHASSIS } from "../robots/chassis";
@@ -132,7 +133,12 @@ export function parseProjectFile(text: string): ProjectSnapshot {
     state: {
       ...file.state,
       projectId: file.state.projectId || file.id,
-      engineering: migrateEngineering(file.state.engineering),
+      engineering: migrateEngineering({
+        ...file.state.engineering,
+        archetype:
+          (json as { state?: { engineering?: { archetype?: unknown } } }).state?.engineering
+            ?.archetype ?? archetypeForChassis(file.state.chassis),
+      }),
       pinOverrides: file.state.pinOverrides ?? {},
     },
     design,

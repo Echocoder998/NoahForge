@@ -164,8 +164,8 @@ describe("portable engineering reports", () => {
     project.flight.electronicsCurrentA = 0;
     project.flight.cruiseCurrentA = 0;
     const markdown = reportMarkdown("Empty rig", project, "");
-    assert.match(markdown, /Undefined at zero mass/);
-    assert.match(markdown, /Undefined at zero current/);
+    assert.match(markdown, /Total mass \/ limit/);
+    assert.match(markdown, /Undefined/);
     assert.doesNotMatch(markdown, /NaN|Infinity/);
   });
 });

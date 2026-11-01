@@ -19,6 +19,7 @@ import type { CustomDesign } from "./robots/design";
 import type { DeviceId, McuId } from "./wire/catalog";
 import { buildPlan, type Plan } from "./wire/plan";
 import { newEngineeringProject, type EngineeringProject } from "./engineering/types";
+import { analyzeProject, archetypeForChassis, bindEngineering } from "./engineering/archetypes";
 import { migrateEngineering } from "./engineering/schema";
 import { projectStorage } from "./engineering/project-storage";
 import { applyPinOverrides } from "./wire/pin-overrides";
@@ -34,7 +35,10 @@ export type Bench =
   | "leg"
   | "flight"
   | "mechanical"
-  | "notebook";
+  | "notebook"
+  | "calculators"
+  | "propulsion"
+  | "aerodynamics";
 export type BoardView = "schematic" | "board";
 export type Filament = "natural" | "black" | "orange" | "white";
 type Counts = Partial<Record<DeviceId, number>>;
@@ -146,8 +150,18 @@ type Lab = {
   clearChat: () => void;
 };
 
-function designState(d: CustomDesign) {
+function designState(d: CustomDesign, s: Lab) {
+  const archetype =
+    d.archetype ??
+    (d.motion === "plane"
+      ? "fixed_wing"
+      : d.motion === "hover"
+        ? "multirotor"
+        : ["hexapod", "quadruped", "biped", "humanoid", "rover"].includes(s.engineering.archetype)
+          ? s.engineering.archetype
+          : "rover");
   return {
+    engineering: bindEngineering(s.engineering, { archetype }),
     customId: d.id,
     projectName: d.projectName,
     part: d.printPart,
@@ -236,7 +250,10 @@ const projectId = () =>
 function restoredState(saved: ProjectSnapshot) {
   return {
     ...saved.state,
-    engineering: migrateEngineering(saved.state.engineering),
+    engineering: migrateEngineering(
+      saved.state.engineering,
+      archetypeForChassis(saved.state.chassis),
+    ),
     projectId: saved.state.projectId || projectId(),
     pinOverrides: saved.state.pinOverrides ?? {},
   };
@@ -292,7 +309,11 @@ export const useLab = create<Lab>()(
       setBench: (bench) => set({ bench }),
       setBoardView: (boardView) => set({ boardView }),
       saveSnapshot: () => set((s) => ({ snapshots: backup(s) })),
-      patchEngineering: (patch) => set((s) => ({ engineering: { ...s.engineering, ...patch } })),
+      patchEngineering: (patch) =>
+        set((s) => {
+          const engineering = bindEngineering(s.engineering, patch);
+          return { engineering, massG: analyzeProject(engineering).massG };
+        }),
       saveProject: () =>
         set((s) => {
           const current = snapshotOf(s);
@@ -351,7 +372,7 @@ export const useLab = create<Lab>()(
           snapshots: backup(s),
           projectId: projectId(),
           projectRevision: s.projectRevision + 1,
-          engineering: newEngineeringProject(),
+          engineering: newEngineeringProject(archetypeForChassis(id)),
           pinOverrides: {},
           notes: "",
           chat: [],
@@ -401,14 +422,14 @@ export const useLab = create<Lab>()(
           pinOverrides: {},
           snapshots: backup(s),
           customs: [...s.customs.filter((d) => d.id !== design.id), design],
-          ...designState(design),
+          ...designState(design, s),
         })),
       activateDesign: (id) =>
         set((s) => {
           const d = s.customs.find((x) => x.id === id);
           return d
             ? {
-                ...designState(d),
+                ...designState(d, s),
                 pinOverrides: {},
                 snapshots: s.customId === id ? s.snapshots : backup(s),
               }
@@ -474,7 +495,10 @@ export const useLab = create<Lab>()(
           ...current,
           ...saved,
           projectRevision: current.projectRevision + 1,
-          engineering: migrateEngineering(saved.engineering),
+          engineering: migrateEngineering(
+            saved.engineering,
+            archetypeForChassis(saved.chassis ?? current.chassis),
+          ),
           projects: Array.isArray(saved.projects) ? saved.projects : [],
         };
       },

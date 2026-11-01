@@ -1,3 +1,4 @@
+import { analyzeProject, archetypeLabels, isWalking } from "./archetypes";
 import type { EngineeringProject, NotebookEntry, Requirement } from "./types";
 
 export type RequirementStatus = "unverified" | "needs-evidence" | "met" | "not-met";
@@ -74,76 +75,65 @@ const status = (requirement: Requirement) =>
   })[requirementStatus(requirement)];
 
 function calculations(project: EngineeringProject): [string, string, string][] {
-  const flight = project.flight;
-  const mass = flight.massItems.reduce((sum, item) => sum + item.massG, 0);
-  const cost = flight.massItems.reduce((sum, item) => sum + item.costUsd, 0);
-  const current = flight.rotorCount * flight.hoverCurrentPerMotorA + flight.electronicsCurrentA;
-  const capacity = (flight.batteryMah / 1000) * flight.usableFraction;
-  const weight = (mass / 1000) * 9.80665;
-  const area = flight.wingAreaDm2 / 100;
-  const stall =
-    mass > 0 && area > 0 && flight.clMax > 0 && flight.airDensity > 0
-      ? Math.sqrt((2 * weight) / (flight.airDensity * area * flight.clMax))
-      : null;
+  const r = analyzeProject(project);
   return [
-    [
-      "Total estimated mass",
-      `${number(mass)} g`,
-      "Sum of the mass table; replace planning estimates with measurements.",
-    ],
-    [
-      "Estimated component cost",
-      `$${number(cost)}`,
-      "Sum of entered item costs; prices and availability are not connected.",
-    ],
-    [
-      "Center of mass (X, Y, Z)",
-      mass > 0
-        ? flight.massItems.reduce((sum, item) => sum + item.massG * item.xMm, 0) / mass +
-          ", " +
-          flight.massItems.reduce((sum, item) => sum + item.massG * item.yMm, 0) / mass +
-          ", " +
-          flight.massItems.reduce((sum, item) => sum + item.massG * item.zMm, 0) / mass +
-          " mm"
-        : "Undefined at zero mass",
-      "Each axis = Σ(mᵢ × coordinateᵢ) / Σmᵢ.",
-    ],
-    [
-      "Thrust-to-weight estimate",
-      mass > 0
-        ? number((flight.rotorCount * flight.thrustPerMotorG) / mass)
-        : "Undefined at zero mass",
-      "Number of rotors × thrust per motor (g-force) / total mass (g). Assumes the entered motor, propeller, battery and test conditions.",
-    ],
-    [
-      "Hover current estimate",
-      `${number(current)} A`,
-      "Rotor count × current per motor + electronics current.",
-    ],
-    [
-      "Hover runtime estimate",
-      current > 0 ? `${number((capacity / current) * 60)} min` : "Undefined at zero current",
-      "Usable battery capacity (Ah) / assumed total current (A) × 60. Battery sag, reserve and transients need testing.",
-    ],
-    [
-      "Cruise runtime estimate",
-      flight.cruiseCurrentA + flight.electronicsCurrentA > 0
-        ? `${number((capacity / (flight.cruiseCurrentA + flight.electronicsCurrentA)) * 60)} min`
-        : "Undefined at zero current",
-      "Usable battery capacity (Ah) / (cruise propulsion current + electronics current) × 60.",
-    ],
-    [
-      "Wing loading estimate",
-      flight.wingAreaDm2 > 0
-        ? `${number(mass / flight.wingAreaDm2)} g/dm²`
-        : "Undefined at zero area",
-      "Mass (g) / wing area (dm²).",
-    ],
-    [
-      "Stall speed estimate",
-      stall === null ? "Undefined for these inputs" : `${number(stall)} m/s`,
-      "√(2W / (ρ S Cₗ,max)); entered lift coefficient and density are assumptions, not a flight-envelope validation.",
-    ],
+    ["Archetype", archetypeLabels[project.archetype], "Selected in the Mission brief"],
+    ...r.metrics.map(([label, value, target, unit]): [string, string, string] => [
+      label,
+      `${value === null ? "Undefined" : number(value)} / ${number(target)} ${unit}`,
+      "Planning estimate / mission limit or target",
+    ]),
+    ...((isWalking(project.archetype)
+      ? [
+          [
+            "Joint stall torque",
+            `${number(r.jointTorqueNcm)} N cm`,
+            "Weight / supporting legs x maximum reach x service factor",
+          ],
+          [
+            "Servo bus continuous / peak",
+            `${number(r.busContinuousA)} / ${number(r.busPeakA)} A`,
+            "Actuator count x entered per-actuator currents + electronics",
+          ],
+          ["Stride gait speed", `${number(r.strideSpeedMs)} m/s`, "Stride length / cycle period"],
+        ]
+      : project.archetype === "rover"
+        ? [
+            [
+              "Required wheel torque",
+              `${number(r.wheelTorqueNcm)} N cm`,
+              "Incline + rolling force x wheel radius / driven wheel count x service factor",
+            ],
+            [
+              "Required motor torque",
+              `${number(r.motorTorqueNcm)} N cm`,
+              "Wheel torque / gear ratio / efficiency",
+            ],
+            [
+              "Incline drive power",
+              `${number(r.drivePowerW)} W`,
+              "Mechanical drive power / efficiency + idle losses",
+            ],
+          ]
+        : project.archetype === "multirotor"
+          ? [
+              [
+                "Thrust-to-weight",
+                number(r.thrustToWeight),
+                "Combined static thrust / mass; target at least 2:1",
+              ],
+            ]
+          : [["Stall speed", `${number(r.stallSpeedMs)} m/s`, "sqrt(2 W / rho S CLmax)"]]) as [
+      string,
+      string,
+      string,
+    ][]),
+    ["Electrical power", `${number(r.powerW)} W`, "Archetype-specific load model"],
+    ...r.notices.map((notice): [string, string, string] => [
+      "Engineering check",
+      notice,
+      "Verify with measured data",
+    ]),
   ];
 }
 

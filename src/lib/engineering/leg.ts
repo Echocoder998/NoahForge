@@ -196,7 +196,7 @@ export function supportMargin(points: Point2[], center: Point2): number | null {
 }
 
 export function gaitFrame(config: LegConfig, phase = config.phase): GaitFrame {
-  const count = [4, 6, 8].includes(config.legCount) ? config.legCount : 6;
+  const count = [2, 4, 6, 8].includes(config.legCount) ? config.legCount : 6;
   const rows = count / 2;
   const duty = clamp(Number.isFinite(config.dutyFactor) ? config.dutyFactor : 0.65, 0.05, 0.99);
   const feet: GaitFoot[] = Array.from({ length: count }, (_, index) => {

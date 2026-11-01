@@ -177,16 +177,16 @@ export function DesignBench() {
             : faults.slice(0, 12).map((i) => (i.title + ": " + i.detail).slice(0, 300)),
           coachingMode,
           engineeringContext: JSON.stringify({
+            archetype: engineering.archetype,
+            sizing: engineering.sizing,
             mission: {
               ...engineering.mission,
               summary: engineering.mission.summary.slice(0, 600),
-              requirements: engineering.mission.requirements
-                .slice(0, 8)
-                .map((requirement) => ({
-                  ...requirement,
-                  text: requirement.text.slice(0, 120),
-                  evidence: requirement.evidence.slice(0, 160),
-                })),
+              requirements: engineering.mission.requirements.slice(0, 8).map((requirement) => ({
+                ...requirement,
+                text: requirement.text.slice(0, 120),
+                evidence: requirement.evidence.slice(0, 160),
+              })),
             },
             leg: engineering.leg,
             flight: {

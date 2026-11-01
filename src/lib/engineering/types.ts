@@ -1,3 +1,35 @@
+export const ROBOT_ARCHETYPES = [
+  "multirotor",
+  "fixed_wing",
+  "hexapod",
+  "quadruped",
+  "biped",
+  "humanoid",
+  "rover",
+] as const;
+export type RobotArchetype = (typeof ROBOT_ARCHETYPES)[number];
+export type SizingConfig = {
+  rotorDiameterMm: number;
+  servoContinuousA: number;
+  servoStallA: number;
+  actuatorMassG: number;
+  actuatorCostUsd: number;
+  motorMassG: number;
+  motorCostUsd: number;
+  additionalActuators: number;
+  busLimitA: number;
+  efficiency: number;
+  driveMotors: number;
+  wheelRadiusMm: number;
+  gearRatio: number;
+  motorRpm: number;
+  slopeDeg: number;
+  rollingResistance: number;
+  tractionCoefficient: number;
+  motorIdleA: number;
+  targetRangeM: number;
+  autoBom: boolean;
+};
 export type Requirement = {
   id: string;
   text: string;
@@ -42,7 +74,7 @@ export type LegConfig = {
   yawMinDeg: number;
   yawMaxDeg: number;
   joints: 2 | 3;
-  legCount: 4 | 6 | 8;
+  legCount: 2 | 4 | 6 | 8;
   bodyLengthMm: number;
   bodyWidthMm: number;
   strideMm: number;
@@ -104,6 +136,8 @@ export type NotebookEntry = {
   photos: { name: string; dataUrl: string }[];
 };
 export type EngineeringProject = {
+  archetype: RobotArchetype;
+  sizing: SizingConfig;
   mission: Mission;
   leg: LegConfig;
   flight: FlightConfig;
@@ -115,8 +149,33 @@ export function localProjectDate(): string {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 }
 
-export function newEngineeringProject(): EngineeringProject {
+export function newEngineeringProject(
+  archetype: RobotArchetype = "fixed_wing",
+): EngineeringProject {
   return {
+    archetype,
+    sizing: {
+      rotorDiameterMm: 254,
+      servoContinuousA: 0.25,
+      servoStallA: 1.2,
+      actuatorMassG: 12,
+      actuatorCostUsd: 5,
+      motorMassG: 45,
+      motorCostUsd: 15,
+      additionalActuators: 0,
+      busLimitA: 20,
+      efficiency: 0.85,
+      driveMotors: 2,
+      wheelRadiusMm: 50,
+      gearRatio: 30,
+      motorRpm: 3000,
+      slopeDeg: 10,
+      rollingResistance: 0.03,
+      tractionCoefficient: 0.6,
+      motorIdleA: 0.2,
+      targetRangeM: 500,
+      autoBom: true,
+    },
     mission: {
       summary: "",
       terrain: "Level indoor test surface",
@@ -140,14 +199,14 @@ export function newEngineeringProject(): EngineeringProject {
       yawMinDeg: -60,
       yawMaxDeg: 60,
       joints: 3,
-      legCount: 6,
+      legCount: archetype === "quadruped" ? 4 : ["biped", "humanoid"].includes(archetype) ? 2 : 6,
       bodyLengthMm: 160,
       bodyWidthMm: 100,
       strideMm: 40,
       stepHeightMm: 25,
       cycleSeconds: 2,
       dutyFactor: 0.65,
-      gait: "tripod",
+      gait: ["quadruped", "biped", "humanoid"].includes(archetype) ? "wave" : "tripod",
       phase: 0,
       comXmm: 0,
       comYmm: 0,
