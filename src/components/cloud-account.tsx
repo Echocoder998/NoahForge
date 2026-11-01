@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { authClient } from "@/lib/auth/client";
-import { googleSignInStatus } from "@/lib/google-sign-in";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Lab } from "./lab/shell";
@@ -10,10 +9,6 @@ export function CloudAccount() {
   const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("error"))
-      setError("Google sign-in did not complete. Try again or use email and password.");
-  }, []);
   if (isPending)
     return (
       <main className="p-8" role="status">
@@ -32,35 +27,6 @@ export function CloudAccount() {
           Your projects, designs, notes, and restore points are saved privately in the cloud and
           available on your other devices.
         </p>
-        <Button
-          className="mb-4 w-full"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            setError("");
-            try {
-              const status = await googleSignInStatus();
-              if (!status.configured)
-                throw new Error(
-                  "Google sign-in is temporarily unavailable. Please use email and password.",
-                );
-              const result = await authClient.signIn.social({
-                provider: "google",
-                callbackURL: "/",
-                errorCallbackURL: "/?error=google",
-              });
-              if (result.error)
-                throw new Error(result.error.message || "Unable to start Google sign-in.");
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Unable to start Google sign-in.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Continue with Google
-        </Button>
-        <p className="mb-4 text-center text-xs text-dust">or continue with email</p>
         <form
           className="grid gap-4"
           onSubmit={async (event) => {
