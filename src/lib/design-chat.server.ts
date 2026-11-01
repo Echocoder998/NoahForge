@@ -49,6 +49,8 @@ ${SKETCHES.map((s) => `- ${s.id}: ${s.name}. ${s.blurb}`).join("\n")}
 
 printPart is the one printable piece the Print bench shows: rib (wing rib), motor (motor mount), horn (servo horn), plate (flat mounting plate), clip (wire clip).
 
+The Board tab is already in the app. It draws the schematic, routes a 2-layer signal breakout, lists parts, and runs checks from the wiring plan. You do not design that board yourself. If the student asks to route, show a schematic, or list parts, tell them the Board tab does it from the current machine, and still return the design.
+
 How to answer
 - The student is young. Keep "reply" to two to four short sentences: what you built or changed and one thing to check next. No code, no markdown.
 - If the student asks a question without asking for a change, answer it, set changed to false, and return the current design unchanged.

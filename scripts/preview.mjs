@@ -4,13 +4,14 @@
  *
  * `vite preview` is strictPort, so a preview left over from an earlier turn
  * both fails the next start and keeps serving the previous build's output.
- * Every restart therefore kills the current port owner first, whoever started
- * it. Owners come from /proc, so this runs only inside the Linux sandbox.
+ * Linux owners come from /proc. Windows uses native TCP/process inspection,
+ * and only terminates preview commands belonging to this workspace.
  *
  *   node scripts/preview.mjs stop|restart
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -44,9 +45,10 @@ export function parsePreviewArgs(argv) {
 }
 
 export function parsePid(text) {
-  const pid = Number.parseInt(String(text ?? "").trim(), 10);
+  const raw = String(text ?? "").trim();
+  const pid = /^\d+$/.test(raw) ? Number(raw) : NaN;
   // pid 1 is the sandbox init — never the preview, and dangerous to signal.
-  return Number.isInteger(pid) && pid > 1 ? pid : null;
+  return Number.isSafeInteger(pid) && pid > 1 ? pid : null;
 }
 
 /** pgid of a process from its /proc/<pid>/stat line. */
@@ -87,7 +89,33 @@ export function looksLikePreviewProcess(cmdline) {
   // `preview` must be the whole script name: `run preview:stop`/`preview:restart`
   // are this tooling's own wrappers, and `vite build --outDir preview-dist` is
   // not a server.
-  return /\brun\s+preview(?:\s|$)/.test(argv) || /\bvite\b\s+preview\b/.test(argv);
+  return /\brun\s+preview(?:\s|$)/.test(argv) || /\bvite(?:\.js)?["']?\s+preview(?:\s|$)/.test(argv);
+}
+
+export function isWorkspacePreviewProcess(cmdline, root) {
+  if (!looksLikePreviewProcess(cmdline)) return false;
+  const normalize = (text) => String(text).replaceAll("\\", "/").toLowerCase();
+  const command = normalize(cmdline);
+  const base = normalize(root).replace(/\/+$/, "");
+  return command.includes(`${base}/scripts/with-app-env.mjs`)
+    || command.includes(`${base}/node_modules/vite/`);
+}
+
+export function previewCommand(platform, node, root) {
+  return platform === "win32"
+    ? { command: node, args: [join(root, "scripts/with-app-env.mjs"), "vite", "preview"] }
+    : { command: "npm", args: ["run", "preview"] };
+}
+
+export function parseNetstatListeners(text, port) {
+  const pids = new Set();
+  for (const line of String(text).split(/\r?\n/)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields[0] !== "TCP" || fields[3] !== "LISTENING" || !fields[1].endsWith(`:${port}`)) continue;
+    const pid = parsePid(fields[4]);
+    if (pid !== null) pids.add(pid);
+  }
+  return [...pids];
 }
 
 /**
@@ -95,12 +123,12 @@ export function looksLikePreviewProcess(cmdline) {
  * a claim left by an earlier run — pids are re-used across hibernate/revive, so
  * signal it only when its command line still looks like the preview.
  */
-export function previewOwners({ portPids, pidFilePid, cmdlineOf }) {
-  const owners = new Set(portPids);
+export function previewOwners({ portPids, pidFilePid, cmdlineOf, verifyPortOwners = false, matches = looksLikePreviewProcess }) {
+  const owners = new Set(portPids.filter((pid) => !verifyPortOwners || matches(cmdlineOf(pid))));
   if (
     pidFilePid !== null &&
     !owners.has(pidFilePid) &&
-    looksLikePreviewProcess(cmdlineOf(pidFilePid))
+    matches(cmdlineOf(pidFilePid))
   ) {
     owners.add(pidFilePid);
   }
@@ -179,7 +207,7 @@ function killPid(pid, signal) {
   // restart() detaches the server into its own process group, so signal the
   // group to reach `vite` under the `npm` wrapper. Only for a leader: `-pid` on
   // a pid that leads no group still reaches any unrelated group numbered pid.
-  if (pgidOf(pid) === pid) {
+  if (process.platform !== "win32" && pgidOf(pid) === pid) {
     try {
       process.kill(-pid, signal);
       return;
@@ -205,7 +233,8 @@ function cmdlineOf(pid) {
 
 function readPidFile() {
   try {
-    return parsePid(readFileSync(PID_FILE, "utf8"));
+    const text = readFileSync(PID_FILE, "utf8");
+    return parsePid(text) ?? parsePid(JSON.parse(text).pid);
   } catch {
     return null;
   }
@@ -243,6 +272,7 @@ function pidsForSocketInodes(inodes) {
  * whose owning pid could not be resolved (an fd dir we may not read).
  */
 function portOwners() {
+  if (process.platform === "win32") return windowsPortOwners();
   const inodes = new Set();
   for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
     let dump;
@@ -258,11 +288,88 @@ function portOwners() {
   return { pids, unattributed: inodes.size > 0 && pids.length === 0 };
 }
 
+function windowsPortOwners() {
+  try {
+    const pids = windowsListenerPids();
+    const marker = readWindowsMarker();
+    const live = windowsProcesses([...pids, readPidFile()].filter((pid) => pid !== null));
+    const cmdlines = {};
+    if (marker) {
+      for (const entry of live) {
+        if (marker.processes.some((saved) => sameProcess(saved, entry))) cmdlines[entry.pid] = marker.command;
+      }
+    }
+    return { pids, cmdlines, unattributed: false };
+  } catch {
+    // Failed inspection must never be interpreted as a free preview port.
+    return { pids: [], cmdlines: {}, unattributed: true };
+  }
+}
+
+function windowsListenerPids() {
+  return parseNetstatListeners(execFileSync("netstat.exe", ["-ano", "-p", "tcp"], {
+    encoding: "utf8", windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024,
+  }), PREVIEW_PORT).filter((pid) => pid !== process.pid);
+}
+
+function windowsProcesses(pids) {
+  const candidates = [...new Set(pids.map(parsePid).filter((pid) => pid !== null))];
+  if (!candidates.length) return [];
+  // Get-Process works without WMI access. Start time plus executable identifies
+  // our recorded process even after Windows reuses a stale PID.
+  const script = `$records = @(@(${candidates.join(",")}) | ForEach-Object {
+    try {
+      $entry = Get-Process -Id $_ -ErrorAction Stop
+      @{ pid = $entry.Id; path = $entry.Path; start = [string]$entry.StartTime.ToUniversalTime().Ticks }
+    } catch {}
+  }); ConvertTo-Json -InputObject @($records) -Compress`;
+  return JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8", windowsHide: true, timeout: 10000, stdio: ["ignore", "pipe", "pipe"],
+  }).replace(/^\uFEFF/, ""));
+}
+
+const normalizedPath = (value) => String(value).replaceAll("\\", "/").toLowerCase();
+const windowsCommand = () => `${process.execPath} ${join(ROOT, "scripts/with-app-env.mjs")} vite preview`;
+export function sameProcess(saved, live) {
+  return parsePid(saved.pid) !== null && parsePid(saved.pid) === parsePid(live.pid) && saved.start === live.start
+    && typeof saved.start === "string" && /^\d+$/.test(saved.start)
+    && normalizedPath(saved.path) === normalizedPath(live.path) && Boolean(live.path);
+}
+
+function readWindowsMarker() {
+  try {
+    const marker = JSON.parse(readFileSync(PID_FILE, "utf8"));
+    return normalizedPath(marker.root) === normalizedPath(ROOT) && marker.command === windowsCommand()
+      && Array.isArray(marker.processes) ? marker : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordWindowsPreview(pid, includeListener = false) {
+  const previous = readWindowsMarker();
+  const known = windowsProcesses([pid]);
+  if (!known.length) return;
+  let processes = known;
+  if (includeListener) {
+    // The port was checked free immediately before this launch. Only record
+    // Node listeners created since our own wrapper, never an older process.
+    const started = BigInt(known[0].start);
+    const listeners = windowsProcesses(windowsListenerPids()).filter((entry) =>
+      normalizedPath(entry.path) === normalizedPath(process.execPath) && BigInt(entry.start) >= started);
+    processes = [...known, ...listeners];
+  } else if (previous) processes = [...known, ...previous.processes];
+  writeFileSync(PID_FILE, JSON.stringify({ pid, root: ROOT, command: windowsCommand(), processes }));
+}
+
 async function stop(announce = true) {
+  const before = portOwners();
   const owners = previewOwners({
-    portPids: portOwners().pids,
+    portPids: before.pids,
     pidFilePid: readPidFile(),
-    cmdlineOf,
+    cmdlineOf: process.platform === "win32" ? (pid) => before.cmdlines[pid] ?? "" : cmdlineOf,
+    verifyPortOwners: process.platform === "win32",
+    matches: process.platform === "win32" ? (command) => isWorkspacePreviewProcess(command, ROOT) : looksLikePreviewProcess,
   });
   const { signalled, stubborn } = await terminatePids(owners, { kill: killPid, isAlive, sleep });
 
@@ -297,13 +404,19 @@ async function restart() {
 
   mkdirSync(dirname(LOG_FILE), { recursive: true });
   const log = openSync(LOG_FILE, "a");
-  const child = spawn("npm", ["run", "preview"], {
+  const launch = previewCommand(process.platform, process.execPath, ROOT);
+  const child = spawn(launch.command, launch.args, {
     cwd: ROOT,
     detached: true,
+    windowsHide: true,
     stdio: ["ignore", log, log],
   });
+  closeSync(log);
   child.unref();
-  writeFileSync(PID_FILE, `${child.pid}\n`);
+  if (child.pid) {
+    if (process.platform === "win32") recordWindowsPreview(child.pid);
+    else writeFileSync(PID_FILE, `${child.pid}\n`);
+  }
 
   let failure = null;
   child.on("error", (err) => {
@@ -325,6 +438,7 @@ async function restart() {
     await stop(false);
     return 1;
   }
+  if (process.platform === "win32") recordWindowsPreview(child.pid, true);
   console.log(`[preview] serving ${PREVIEW_URL} (pid ${child.pid}, log ${LOG_FILE})`);
   return 0;
 }
@@ -335,8 +449,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error(`[preview] ${args.error}`);
     process.exit(1);
   }
-  if (!existsSync("/proc/self")) {
-    console.error("[preview] no /proc — this script only runs inside the sandbox");
+  if (process.platform !== "win32" && !existsSync("/proc/self")) {
+    console.error("[preview] process inspection requires Windows or Linux /proc");
     process.exit(1);
   }
   process.exitCode = args.action === "stop" ? ((await stop()) ? 0 : 1) : await restart();

@@ -157,6 +157,8 @@ export default defineConfig(({ command, isPreview }) => ({
     strictPort: true,
   },
   resolve: { tsconfigPaths: true },
+  // Discover optional 3D tools before the first workspace switch.
+  optimizeDeps: { include: ["three", "three/addons/controls/OrbitControls.js"] },
   plugins: [
     pgliteBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.

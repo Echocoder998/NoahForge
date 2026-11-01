@@ -111,7 +111,14 @@ function main(argv) {
     process.exit(2);
   }
   const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
-  const child = spawn(command, args, { stdio: "inherit", env });
+  // Windows cannot execute npm's extensionless POSIX shim with spawn().
+  // Use the package CLI through Node while retaining the same env wrapper.
+  const windowsVite = process.platform === "win32" && command === "vite";
+  const child = spawn(
+    windowsVite ? process.execPath : command,
+    windowsVite ? [join(projectRoot(), "node_modules/vite/bin/vite.js"), ...args] : args,
+    { stdio: "inherit", env },
+  );
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));

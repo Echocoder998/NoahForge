@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
+  isWorkspacePreviewProcess,
   looksLikePreviewProcess,
   parseListenerInodes,
+  parseNetstatListeners,
   parsePgid,
   parsePid,
   parsePreviewArgs,
+  previewCommand,
   previewOwners,
+  sameProcess,
   stopOutcome,
   terminatePids,
 } from "./preview.mjs";
@@ -30,6 +35,8 @@ test("parsePid reads a pidfile and rejects junk", () => {
   assert.equal(parsePid(""), null);
   assert.equal(parsePid("not-a-pid"), null);
   assert.equal(parsePid("-7"), null);
+  assert.equal(parsePid("4321junk"), null);
+  assert.equal(parsePid("2.5"), null);
   // pid 1 is the sandbox init, never a preview server.
   assert.equal(parsePid("1"), null);
 });
@@ -121,6 +128,51 @@ test("looksLikePreviewProcess spares the sibling scripts and re-used pids", () =
   assert.equal(looksLikePreviewProcess(""), false);
 });
 
+test("Windows preview commands support quoted Node and Vite paths", () => {
+  assert.equal(looksLikePreviewProcess('"C:\\Program Files\\nodejs\\node.exe" "D:\\Lab Space\\node_modules\\vite\\bin\\vite.js" preview'), true);
+  assert.equal(looksLikePreviewProcess('node "D:\\Lab Space\\scripts\\with-app-env.mjs" vite preview'), true);
+  assert.equal(looksLikePreviewProcess('node "D:\\Lab Space\\node_modules\\vite\\bin\\vite.js" preview:stop'), false);
+  assert.equal(looksLikePreviewProcess('node "D:\\Lab Space\\node_modules\\vite\\bin\\vite.js" build'), false);
+});
+
+test("Windows ownership validates both preview command and workspace path", () => {
+  const root = "D:\\Lab Space";
+  assert.equal(isWorkspacePreviewProcess('node "D:\\Lab Space\\node_modules\\vite\\bin\\vite.js" preview', root), true);
+  assert.equal(isWorkspacePreviewProcess('node "d:\\lab space\\scripts\\with-app-env.mjs" vite preview', root), true);
+  assert.equal(isWorkspacePreviewProcess('node "D:\\Lab Space Other\\node_modules\\vite\\bin\\vite.js" preview', root), false);
+  assert.equal(isWorkspacePreviewProcess('node "D:\\Lab Space\\node_modules\\vite\\bin\\vite.js" dev', root), false);
+  assert.equal(isWorkspacePreviewProcess('node "D:\\Lab Space\\scripts\\preview.mjs" restart', root), false);
+});
+
+test("previewCommand retains the environment wrapper without Windows npm shims", () => {
+  const root = join("workspace", "Lab Space");
+  assert.deepEqual(previewCommand("win32", "node.exe", root), {
+    command: "node.exe", args: [join(root, "scripts/with-app-env.mjs"), "vite", "preview"],
+  });
+  assert.deepEqual(previewCommand("linux", "/usr/bin/node", root), { command: "npm", args: ["run", "preview"] });
+});
+
+test("parseNetstatListeners selects exact listening TCP ports for IPv4 and IPv6", () => {
+  const text = [
+    "TCP 127.0.0.1:8081 0.0.0.0:0 LISTENING 50",
+    "TCP [::1]:8081 [::]:0 LISTENING 50",
+    "TCP 127.0.0.1:18081 0.0.0.0:0 LISTENING 51",
+    "TCP 127.0.0.1:8081 127.0.0.1:40000 ESTABLISHED 52",
+    "UDP 127.0.0.1:8081 *:* LISTENING 53",
+  ].join("\r\n");
+  assert.deepEqual(parseNetstatListeners(text, 8081), [50]);
+  assert.deepEqual(parseNetstatListeners(text, 8080), []);
+});
+
+test("Windows PID marker verification rejects reused IDs and different executables", () => {
+  const saved = { pid: 50, path: "C:\\Node\\node.exe", start: "6370000000000" };
+  assert.equal(sameProcess(saved, { ...saved, path: "c:\\node\\node.exe" }), true);
+  assert.equal(sameProcess(saved, { ...saved, start: "6370000000001" }), false);
+  assert.equal(sameProcess(saved, { ...saved, path: "C:\\Other\\node.exe" }), false);
+  assert.equal(sameProcess(saved, { ...saved, pid: 51 }), false);
+  assert.equal(sameProcess({ ...saved, pid: null }, { ...saved, pid: null }), false);
+});
+
 test("previewOwners trusts port owners and dedupes the pidfile pid", () => {
   const owners = previewOwners({
     portPids: [50, 51],
@@ -156,6 +208,22 @@ test("previewOwners drops a pidfile pid that no longer exists", () => {
 test("previewOwners on a free port with no pidfile signals nothing", () => {
   const owners = previewOwners({ portPids: [], pidFilePid: null, cmdlineOf: () => "" });
   assert.deepEqual(owners, []);
+});
+
+test("Windows port ownership never selects another app or a stale PID for termination", () => {
+  const root = "D:\\Lab";
+  const commands = {
+    50: 'node "D:\\Lab\\node_modules\\vite\\bin\\vite.js" preview',
+    51: 'node "D:\\Other\\node_modules\\vite\\bin\\vite.js" preview',
+    52: 'node "D:\\Lab\\server.mjs"',
+    53: 'node "D:\\Lab\\scripts\\with-app-env.mjs" vite preview',
+  };
+  const options = {
+    portPids: [50, 51, 52], cmdlineOf: (pid) => commands[pid] ?? "", verifyPortOwners: true,
+    matches: (command) => isWorkspacePreviewProcess(command, root),
+  };
+  assert.deepEqual(previewOwners({ ...options, pidFilePid: 53 }), [50, 53]);
+  assert.deepEqual(previewOwners({ ...options, pidFilePid: 52 }), [50]);
 });
 
 test("stopOutcome fails when a pid survives or the port is still held", () => {

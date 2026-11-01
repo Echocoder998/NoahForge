@@ -19,17 +19,54 @@ import type { CustomDesign } from "./robots/design";
 import type { DeviceId, McuId } from "./wire/catalog";
 import { buildPlan, type Plan } from "./wire/plan";
 
-export type Bench = "design" | "frame" | "print" | "wire" | "code";
+export type Bench = "design" | "frame" | "print" | "wire" | "board" | "code";
+export type BoardView = "schematic" | "board";
 export type Filament = "natural" | "black" | "orange" | "white";
 type Counts = Partial<Record<DeviceId, number>>;
 
-export type ChatTurn = { role: "user" | "assistant"; text: string; designId?: string; error?: boolean };
+type ProjectState = Pick<
+  Lab,
+  | "projectName"
+  | "chassis"
+  | "scale"
+  | "legs"
+  | "part"
+  | "filament"
+  | "rib"
+  | "motor"
+  | "horn"
+  | "plate"
+  | "clip"
+  | "spanMm"
+  | "massG"
+  | "speedMs"
+  | "mcu"
+  | "picked"
+  | "sketch"
+  | "notes"
+  | "customId"
+>;
+export type ProjectSnapshot = {
+  id: string;
+  savedAt: number;
+  state: ProjectState;
+  design: CustomDesign | null;
+};
+
+export type ChatTurn = {
+  role: "user" | "assistant";
+  text: string;
+  designId?: string;
+  error?: boolean;
+};
 
 const MAX_CHAT = 40;
 
 type Lab = {
   projectName: string;
   bench: Bench;
+  boardView: BoardView;
+  snapshots: ProjectSnapshot[];
   chassis: ChassisId;
   scale: number;
   legs: 6 | 8;
@@ -52,6 +89,9 @@ type Lab = {
   chat: ChatTurn[];
   setProjectName: (name: string) => void;
   setBench: (bench: Bench) => void;
+  setBoardView: (view: BoardView) => void;
+  saveSnapshot: () => void;
+  restoreSnapshot: (id: string) => void;
   setChassis: (id: ChassisId) => void;
   setScale: (scale: number) => void;
   setLegs: (legs: 6 | 8) => void;
@@ -87,13 +127,81 @@ function designState(d: CustomDesign) {
   };
 }
 
+function snapshotOf(s: Lab): ProjectSnapshot {
+  const {
+    projectName,
+    chassis,
+    scale,
+    legs,
+    part,
+    filament,
+    rib,
+    motor,
+    horn,
+    plate,
+    clip,
+    spanMm,
+    massG,
+    speedMs,
+    mcu,
+    picked,
+    sketch,
+    notes,
+    customId,
+  } = s;
+  return {
+    id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    savedAt: Date.now(),
+    state: {
+      projectName,
+      chassis,
+      scale,
+      legs,
+      part,
+      filament,
+      rib,
+      motor,
+      horn,
+      plate,
+      clip,
+      spanMm,
+      massG,
+      speedMs,
+      mcu,
+      picked: { ...picked },
+      sketch,
+      notes,
+      customId,
+    },
+    design: s.customs.find((d) => d.id === customId) ?? null,
+  };
+}
+
+function backup(s: Lab): ProjectSnapshot[] {
+  const next = snapshotOf(s);
+  const same = (p: ProjectSnapshot) =>
+    JSON.stringify(p.state) === JSON.stringify(next.state) &&
+    JSON.stringify(p.design) === JSON.stringify(next.design);
+  const existing = s.snapshots.find(same);
+  return [existing ?? next, ...s.snapshots.filter((p) => !same(p))].slice(0, 12);
+}
+
+/** Keep manual edits when a saved AI design is reopened. */
+function editDesign(s: Lab, patch: Partial<CustomDesign>) {
+  return s.customs.map((d) =>
+    d.id === s.customId ? { ...d, ...patch, updatedAt: Date.now() } : d,
+  );
+}
+
 const starter = chassisById("plane");
 
 export const useLab = create<Lab>()(
   persist(
     (set) => ({
       projectName: starter.projectName,
-      bench: "frame",
+      bench: "design",
+      boardView: "schematic",
+      snapshots: [],
       chassis: starter.id,
       scale: 1,
       legs: starter.legs,
@@ -114,11 +222,29 @@ export const useLab = create<Lab>()(
       customs: [],
       customId: null,
       chat: [],
-      setProjectName: (projectName) => set({ projectName }),
+      setProjectName: (projectName) =>
+        set((s) => ({ projectName, customs: editDesign(s, { projectName }) })),
       setBench: (bench) => set({ bench }),
+      setBoardView: (boardView) => set({ boardView }),
+      saveSnapshot: () => set((s) => ({ snapshots: backup(s) })),
+      restoreSnapshot: (id) =>
+        set((s) => {
+          const saved = s.snapshots.find((p) => p.id === id);
+          if (!saved) return {};
+          return {
+            ...saved.state,
+            snapshots: backup(s),
+            customs: saved.design
+              ? [...s.customs.filter((d) => d.id !== saved.design!.id), saved.design]
+              : s.customs,
+            chat: [],
+          };
+        }),
       setChassis: (id) => {
         const next = chassisById(id);
-        set({
+        set((s) => ({
+          snapshots: backup(s),
+          chat: [],
           customId: null,
           chassis: next.id,
           projectName: next.projectName,
@@ -127,16 +253,17 @@ export const useLab = create<Lab>()(
           picked: { ...next.picked },
           sketch: next.sketch,
           legs: next.legs,
-        });
+        }));
       },
       setScale: (scale) => set({ scale }),
       setLegs: (legs) =>
         set((s) => ({
           legs,
           picked: s.chassis === "spider" ? { ...s.picked, sg90: legs } : s.picked,
-          projectName: s.chassis === "spider" ? (legs === 8 ? "Oct walker" : "Hex walker") : s.projectName,
+          projectName:
+            s.chassis === "spider" ? (legs === 8 ? "Oct walker" : "Hex walker") : s.projectName,
         })),
-      setPart: (part) => set({ part }),
+      setPart: (part) => set((s) => ({ part, customs: editDesign(s, { printPart: part }) })),
       setFilament: (filament) => set({ filament }),
       patchRib: (patch) => set((s) => ({ rib: { ...s.rib, ...patch } })),
       patchMotor: (patch) => set((s) => ({ motor: { ...s.motor, ...patch } })),
@@ -146,7 +273,7 @@ export const useLab = create<Lab>()(
       setSpan: (spanMm) => set({ spanMm }),
       setMass: (massG) => set({ massG }),
       setSpeed: (speedMs) => set({ speedMs }),
-      setMcu: (mcu) => set({ mcu }),
+      setMcu: (mcu) => set((s) => ({ mcu, customs: editDesign(s, { mcu }) })),
       setDevice: (id, count) =>
         set((s) => {
           const picked: Counts = { ...s.picked, [id]: count };
@@ -154,19 +281,22 @@ export const useLab = create<Lab>()(
           if (count > 0 && id === "pack3s") picked.pack2s = 0;
           if (count > 0 && id === "bec5") picked.bec6 = 0;
           if (count > 0 && id === "bec6") picked.bec5 = 0;
-          return { picked };
+          return { picked, customs: editDesign(s, { picked }) };
         }),
-      setSketch: (sketch) => set({ sketch }),
+      setSketch: (sketch) => set((s) => ({ sketch, customs: editDesign(s, { sketch }) })),
       setNotes: (notes) => set({ notes }),
       saveDesign: (design) =>
         set((s) => ({
+          snapshots: backup(s),
           customs: [...s.customs.filter((d) => d.id !== design.id), design],
           ...designState(design),
         })),
       activateDesign: (id) =>
         set((s) => {
           const d = s.customs.find((x) => x.id === id);
-          return d ? designState(d) : {};
+          return d
+            ? { ...designState(d), snapshots: s.customId === id ? s.snapshots : backup(s) }
+            : {};
         }),
       deleteDesign: (id) =>
         set((s) => {
@@ -192,6 +322,8 @@ export const useLab = create<Lab>()(
       partialize: (s) => ({
         projectName: s.projectName,
         bench: s.bench,
+        boardView: s.boardView,
+        snapshots: s.snapshots,
         chassis: s.chassis,
         scale: s.scale,
         legs: s.legs,
@@ -228,5 +360,10 @@ export function useBenchPlan(): Plan {
   const picked = useLab((s) => s.picked);
   const chassis = useLab((s) => s.chassis);
   const design = useActiveDesign();
-  return buildPlan(mcu, picked, chassis, design ? { servos: design.servoNames, motors: design.motorNames } : undefined);
+  return buildPlan(
+    mcu,
+    picked,
+    chassis,
+    design ? { servos: design.servoNames, motors: design.motorNames } : undefined,
+  );
 }
