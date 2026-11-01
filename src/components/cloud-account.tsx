@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { authClient, signIn } from "@/lib/auth/client";
+import { authClient } from "@/lib/auth/client";
+import { googleSignInStatus } from "@/lib/google-sign-in";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
 import { Lab } from "./lab/shell";
@@ -38,7 +39,18 @@ export function CloudAccount() {
             setBusy(true);
             setError("");
             try {
-              await signIn("grok-google", { callbackURL: "/", errorCallbackURL: "/?error=google" });
+              const status = await googleSignInStatus();
+              if (!status.configured)
+                throw new Error(
+                  "Google sign-in is temporarily unavailable. Please use email and password.",
+                );
+              const result = await authClient.signIn.social({
+                provider: "google",
+                callbackURL: "/",
+                errorCallbackURL: "/?error=google",
+              });
+              if (result.error)
+                throw new Error(result.error.message || "Unable to start Google sign-in.");
             } catch (err) {
               setError(err instanceof Error ? err.message : "Unable to start Google sign-in.");
             } finally {
