@@ -1,3 +1,4 @@
+import { portablePhotos, uploadPrivatePhoto } from "@/lib/engineering/private-photos";
 import { useMemo, useState } from "react";
 import {
   Bar,
@@ -24,8 +25,6 @@ import { Button } from "@/components/ui/button";
 import { useLab } from "@/lib/lab-store";
 import type { NotebookEntry } from "@/lib/engineering/types";
 import {
-  MAX_NOTEBOOK_PHOTO_CHARS,
-  MAX_PHOTO_BYTES,
   measurementDelta,
   reportHtml,
   reportMarkdown,
@@ -55,57 +54,8 @@ function blankEntry(): NotebookEntry {
   };
 }
 
-async function photoFromFile(file: File): Promise<{ name: string; dataUrl: string }> {
-  if (file.size > 12_000_000) throw new Error("Choose a photo smaller than 12 MB.");
-  const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-  const png = bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71;
-  const jpeg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-  const webp =
-    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
-    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
-  if (
-    !(png && file.type === "image/png") &&
-    !(jpeg && file.type === "image/jpeg") &&
-    !(webp && file.type === "image/webp")
-  )
-    throw new Error("Choose a PNG, JPEG, or WebP photo.");
-  let photoBlob: Blob = file;
-  if (file.size > MAX_PHOTO_BYTES) {
-    const bitmap = await createImageBitmap(file);
-    try {
-      const canvas = document.createElement("canvas");
-      let scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
-      for (let pass = 0; pass < 6; pass++) {
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-        const context = canvas.getContext("2d");
-        if (!context) throw new Error("Could not prepare this photo.");
-        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        photoBlob = await new Promise<Blob>((resolve, reject) =>
-          canvas.toBlob(
-            (blob) => (blob ? resolve(blob) : reject(new Error("Could not resize this photo."))),
-            "image/webp",
-            0.8,
-          ),
-        );
-        if (photoBlob.size <= MAX_PHOTO_BYTES) break;
-        scale *= 0.75;
-      }
-    } finally {
-      bitmap.close();
-    }
-  }
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("The photo could not be read. Try another file."));
-    reader.readAsDataURL(photoBlob);
-  });
-  if (!safePhoto(dataUrl))
-    throw new Error(
-      "The photo could not be attached safely. Choose a smaller PNG, JPEG, or WebP file.",
-    );
-  return { name: file.name.slice(0, 150), dataUrl };
+async function photoFromFile(file: File) {
+  return uploadPrivatePhoto(file, file.name);
 }
 
 function download(name: string, text: string, type: string) {
@@ -114,9 +64,8 @@ function download(name: string, text: string, type: string) {
   link.href = url;
   link.download = name;
   link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
 export function NotebookBench() {
   const engineering = useLab((s) => s.engineering);
   const projectName = useLab((s) => s.projectName);
@@ -132,13 +81,7 @@ export function NotebookBench() {
   const [chartUnit, setChartUnit] = useState("");
   const entries = engineering.notebook;
   const canUndoRemove =
-    removed !== null &&
-    entries.length < 100 &&
-    !entries.some((entry) => entry.id === removed.id) &&
-    [...entries, removed].reduce(
-      (sum, entry) => sum + entry.photos.reduce((count, photo) => count + photo.dataUrl.length, 0),
-      0,
-    ) <= MAX_NOTEBOOK_PHOTO_CHARS;
+    removed !== null && entries.length < 100 && !entries.some((entry) => entry.id === removed.id);
   const patch = (value: Partial<NotebookEntry>) =>
     setDraft((current) => ({ ...current, ...value }));
   const comparisonEntries = entries.filter((entry) => measurementDelta(entry) !== null);
@@ -193,18 +136,6 @@ export function NotebookBench() {
     const next = editing
       ? entries.map((entry) => (entry.id === saved.id ? saved : entry))
       : [...entries, saved];
-    if (
-      next.reduce(
-        (sum, entry) =>
-          sum + entry.photos.reduce((count, photo) => count + photo.dataUrl.length, 0),
-        0,
-      ) > MAX_NOTEBOOK_PHOTO_CHARS
-    ) {
-      setError(
-        "This project's photos exceed the 2 MB storage budget. Remove a photo before saving.",
-      );
-      return;
-    }
     let mission = engineering.mission;
     if (linkedRequirement) {
       const requirement = mission.requirements.find((item) => item.id === linkedRequirement);
@@ -258,21 +189,6 @@ export function NotebookBench() {
       if (draft.photos.length + files.length > 3)
         throw new Error("Attach up to three photos per entry.");
       const photos = await Promise.all(Array.from(files).map(photoFromFile));
-      const otherPhotoChars = entries
-        .filter((entry) => entry.id !== draft.id)
-        .reduce(
-          (sum, entry) =>
-            sum + entry.photos.reduce((count, photo) => count + photo.dataUrl.length, 0),
-          0,
-        );
-      const draftPhotoChars = [...draft.photos, ...photos].reduce(
-        (sum, photo) => sum + photo.dataUrl.length,
-        0,
-      );
-      if (otherPhotoChars + draftPhotoChars > MAX_NOTEBOOK_PHOTO_CHARS)
-        throw new Error(
-          "This project's photos exceed the 2 MB browser-storage budget. Use fewer or smaller photos.",
-        );
       setDraft((current) => ({ ...current, photos: [...current.photos, ...photos] }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The photos could not be attached.");
@@ -458,8 +374,8 @@ export function NotebookBench() {
                 />
               </label>
               <p className="mt-1 text-xs text-dust">
-                PNG, JPEG or WebP up to 12 MB; large photos are resized automatically. Three photos
-                per entry. Photos stay in the project and exported report.
+                PNG, JPEG or WebP up to 20 MB, uploaded to private file storage. Three photos per
+                entry. Photos stay in the project and exported report.
               </p>
               {draft.photos.length > 0 && (
                 <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -656,25 +572,33 @@ export function NotebookBench() {
           <div className="mt-4 grid gap-2">
             <Button
               variant="primary"
-              onClick={() =>
-                download(
-                  `${slug}-engineering-report.md`,
-                  reportMarkdown(projectName, engineering, projectNotes),
-                  "text/markdown",
-                )
-              }
+              onClick={async () => {
+                try {
+                  download(
+                    `${slug}-engineering-report.md`,
+                    reportMarkdown(projectName, await portablePhotos(engineering), projectNotes),
+                    "text/markdown",
+                  );
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Export failed.");
+                }
+              }}
             >
               <Download className="size-4" aria-hidden />
               Export Markdown report
             </Button>
             <Button
-              onClick={() =>
-                download(
-                  `${slug}-engineering-report.html`,
-                  reportHtml(projectName, engineering, projectNotes),
-                  "text/html",
-                )
-              }
+              onClick={async () => {
+                try {
+                  download(
+                    `${slug}-engineering-report.html`,
+                    reportHtml(projectName, await portablePhotos(engineering), projectNotes),
+                    "text/html",
+                  );
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "Export failed.");
+                }
+              }}
             >
               <Download className="size-4" aria-hidden />
               Export printable HTML

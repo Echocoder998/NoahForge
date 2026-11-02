@@ -34,9 +34,10 @@ export function measurementDelta(
   };
 }
 
-export const MAX_PHOTO_BYTES = 350_000;
+export const MAX_PHOTO_BYTES = 20_000_000;
 export const MAX_NOTEBOOK_PHOTO_CHARS = 2_000_000;
 export function safePhoto(dataUrl: string): boolean {
+  if (/^\/api\/files\/read\?path=users%2F[A-Za-z0-9%._~-]+$/.test(dataUrl)) return true;
   if (typeof dataUrl !== "string" || dataUrl.length > Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 80)
     return false;
   const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);

@@ -21,6 +21,7 @@ import { buildPlan, type Plan } from "./wire/plan";
 import { newEngineeringProject, type EngineeringProject } from "./engineering/types";
 import { analyzeProject, archetypeForChassis, bindEngineering } from "./engineering/archetypes";
 import { migrateEngineering } from "./engineering/schema";
+import { loadCloudProject } from "./engineering/project-storage";
 import { projectStorage } from "./engineering/project-storage";
 import { applyPinOverrides } from "./wire/pin-overrides";
 
@@ -69,6 +70,7 @@ export type ProjectState = Pick<
   | "pinOverrides"
 >;
 export type ProjectSnapshot = {
+  remote?: boolean;
   id: string;
   savedAt: number;
   state: ProjectState;
@@ -124,7 +126,7 @@ type Lab = {
   restoreSnapshot: (id: string) => void;
   patchEngineering: (patch: Partial<EngineeringProject>) => void;
   saveProject: () => void;
-  openProject: (id: string) => void;
+  openProject: (id: string) => void | Promise<void>;
   importProject: (project: ProjectSnapshot) => void;
   setChassis: (id: ChassisId) => void;
   setScale: (scale: number) => void;
@@ -318,13 +320,21 @@ export const useLab = create<Lab>()(
         set((s) => {
           const current = snapshotOf(s);
           return {
-            projects: [
-              current,
-              ...s.projects.filter((p) => p.state.projectId !== s.projectId),
-            ].slice(0, 30),
+            projects: [current, ...s.projects.filter((p) => p.state.projectId !== s.projectId)],
           };
         }),
-      openProject: (id) =>
+      openProject: async (id) => {
+        const remote = useLab.getState().projects.find((p) => p.state.projectId === id);
+        if (remote?.remote) {
+          const saved = await loadCloudProject(id);
+          set((s) => ({
+            ...saved,
+            engineering: migrateEngineering(saved.engineering, archetypeForChassis(saved.chassis)),
+            projects: s.projects,
+            projectRevision: s.projectRevision + 1,
+          }));
+          return;
+        }
         set((s) => {
           const saved = s.projects.find((p) => p.state.projectId === id);
           if (!saved) return {};
@@ -337,7 +347,8 @@ export const useLab = create<Lab>()(
               : s.customs,
             chat: [],
           };
-        }),
+        });
+      },
       importProject: (saved) =>
         set((s) => {
           const imported = { ...saved, state: { ...restoredState(saved), projectId: projectId() } };
@@ -345,7 +356,7 @@ export const useLab = create<Lab>()(
             ...imported.state,
             projectRevision: s.projectRevision + 1,
             snapshots: backup(s),
-            projects: [imported, ...s.projects].slice(0, 30),
+            projects: [imported, ...s.projects],
             customs: imported.design
               ? [...s.customs.filter((d) => d.id !== imported.design!.id), imported.design]
               : s.customs,
@@ -467,7 +478,7 @@ export const useLab = create<Lab>()(
         projectName: s.projectName,
         bench: s.bench,
         boardView: s.boardView,
-        snapshots: s.snapshots,
+        snapshots: s.snapshots.filter((p) => p.state.projectId === s.projectId),
         chassis: s.chassis,
         scale: s.scale,
         legs: s.legs,

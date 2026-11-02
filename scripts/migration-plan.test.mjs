@@ -60,7 +60,7 @@ test("the cloud workspace ships auth and workspace migrations", () => {
   const migrationsDir = join(projectRoot(), "migrations");
   assert.deepEqual(
     pendingMigrations(readdirSync(migrationsDir), []).map((m) => m.name),
-    ["0001_auth.sql", "0002_workspaces.sql"],
+    ["0001_auth.sql", "0002_workspaces.sql", "0003_project_storage.sql"],
   );
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });

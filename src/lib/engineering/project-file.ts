@@ -97,9 +97,9 @@ export function projectFile(project: ProjectSnapshot): string {
 
 /** Strictly validate imports before any live project is replaced. */
 export function parseProjectFile(text: string): ProjectSnapshot {
-  if (text.length > 4_000_000)
+  if (text.length > 100_000_000)
     throw new Error(
-      "Project files must be smaller than 4 MB. Reduce attached photos before exporting.",
+      "Project files must be smaller than 100 MB. Reduce attached photos before exporting.",
     );
   let json: unknown;
   try {

@@ -154,8 +154,10 @@ export const engineeringSchema = z.object({
               name: z.string().max(240),
               dataUrl: z
                 .string()
-                .max(700000)
-                .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/),
+                .max(28_000_000)
+                .regex(
+                  /^(?:data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+|\/api\/files\/read\?path=users%2F[A-Za-z0-9%._~-]+)$/,
+                ),
             }),
           )
           .max(3),

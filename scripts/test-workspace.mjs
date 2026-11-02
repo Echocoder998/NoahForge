@@ -8,6 +8,7 @@ const server = await createServer({
   appType: "custom",
 });
 try {
+  await server.ssrLoadModule("/src/lib/engineering/project-envelope.test.ts");
   await server.ssrLoadModule("/src/lib/engineering/archetypes.test.ts");
   await server.ssrLoadModule("/src/lib/board/build.test.ts");
   await server.ssrLoadModule("/src/lib/lab-store.test.ts");

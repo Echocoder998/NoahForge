@@ -1,3 +1,5 @@
+import { portablePhotos } from "@/lib/engineering/private-photos";
+import { loadCloudProject } from "@/lib/engineering/project-storage";
 import { useEffect, useState } from "react";
 import { UserButton } from "@/lib/auth/gates";
 import {
@@ -176,13 +178,32 @@ const WORKSPACES: {
   },
 ];
 
-function exportSnapshot(snapshot: ProjectSnapshot) {
-  const url = URL.createObjectURL(new Blob([projectFile(snapshot)], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${snapshot.state.projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "project"}-backup.json`;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+async function exportSnapshot(snapshot: ProjectSnapshot) {
+  try {
+    if (snapshot.remote) {
+      const state = await loadCloudProject(snapshot.state.projectId);
+      snapshot = {
+        ...snapshot,
+        state,
+        design: state.customs?.find((d: { id: string }) => d.id === state.customId) ?? null,
+      };
+    }
+    snapshot = await portablePhotos(snapshot);
+    const url = URL.createObjectURL(
+      new Blob([projectFile(snapshot)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${snapshot.state.projectName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "project"}-backup.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    window.dispatchEvent(
+      new CustomEvent("noah-forge-storage-error", {
+        detail: error instanceof Error ? error.message : "Export failed.",
+      }),
+    );
+  }
 }
 
 export function Lab() {
@@ -276,6 +297,22 @@ export function Lab() {
   useEffect(() => {
     let active = true;
     setLoadError(false);
+    const savedProject = (event: Event) => {
+      const { id, name } = (event as CustomEvent<{ id: string; name: string }>).detail;
+      useLab.setState((s) => ({
+        projects: [
+          {
+            id,
+            savedAt: Date.now(),
+            remote: true,
+            state: { projectId: id, projectName: name } as ProjectSnapshot["state"],
+            design: null,
+          },
+          ...s.projects.filter((p) => p.state.projectId !== id),
+        ],
+      }));
+    };
+    window.addEventListener("noah-forge-project-saved", savedProject);
     const status = (event: Event) => setCloud((event as CustomEvent<string>).detail);
     const leaving = (event: BeforeUnloadEvent) => {
       if (hasUnsavedChanges()) {
@@ -296,6 +333,7 @@ export function Lab() {
       });
     return () => {
       active = false;
+      window.removeEventListener("noah-forge-project-saved", savedProject);
       window.removeEventListener("noah-forge-cloud-status", status);
       window.removeEventListener("beforeunload", leaving);
     };
@@ -553,8 +591,9 @@ export function Lab() {
             >
               <h2 className="text-sm font-semibold">Your engineering projects</h2>
               <p className="mt-1 text-xs text-dust">
-                Save up to 30 named projects here. Project files include the active machine,
-                electronics, printable dimensions, requirements, calculations, and notebook.
+                Each named project saves separately in the cloud. Project files include the active
+                machine, electronics, printable dimensions, requirements, calculations, and
+                notebook.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
@@ -615,8 +654,8 @@ export function Lab() {
                     event.currentTarget.value = "";
                     if (!file) return;
                     try {
-                      if (file.size > 4_000_000)
-                        throw new Error("Project files must be smaller than 4 MB.");
+                      if (file.size > 100_000_000)
+                        throw new Error("Project files must be smaller than 100 MB.");
                       const imported = parseProjectFile(await file.text());
                       importProject(imported);
                       setBench("mission");
@@ -651,10 +690,16 @@ export function Lab() {
                         {saved.state.projectName}
                       </span>
                       <Button
-                        onClick={() => {
-                          openProject(saved.state.projectId);
-                          setProjectsOpen(false);
-                          setNotice("Named project opened. Previous setup backed up.");
+                        onClick={async () => {
+                          try {
+                            await openProject(saved.state.projectId);
+                            setProjectsOpen(false);
+                            setNotice("Named project opened. Previous setup saved to cloud.");
+                          } catch (error) {
+                            setProjectError(
+                              error instanceof Error ? error.message : "Could not open project.",
+                            );
+                          }
                         }}
                       >
                         Open project

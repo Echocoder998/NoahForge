@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiFilesReadRouteImport } from './routes/api/files/read'
+import { Route as ApiFilesUploadRouteImport } from './routes/api/files/upload'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +24,49 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiFilesReadRoute = ApiFilesReadRouteImport.update({
+  id: '/api/files/read',
+  path: '/api/files/read',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFilesUploadRoute = ApiFilesUploadRouteImport.update({
+  id: '/api/files/upload',
+  path: '/api/files/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/read': typeof ApiFilesReadRoute
+  '/api/files/upload': typeof ApiFilesUploadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/read': typeof ApiFilesReadRoute
+  '/api/files/upload': typeof ApiFilesUploadRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/read': typeof ApiFilesReadRoute
+  '/api/files/upload': typeof ApiFilesUploadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/auth/$'
+  fullPaths: '/' | '/api/auth/$' | '/api/files/read' | '/api/files/upload'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/auth/$'
-  id: '__root__' | '/' | '/api/auth/$'
+  to: '/' | '/api/auth/$' | '/api/files/read' | '/api/files/upload'
+  id: '__root__' | '/' | '/api/auth/$' | '/api/files/read' | '/api/files/upload'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiFilesReadRoute: typeof ApiFilesReadRoute
+  ApiFilesUploadRoute: typeof ApiFilesUploadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +85,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/files/read': {
+      id: '/api/files/read'
+      path: '/api/files/read'
+      fullPath: '/api/files/read'
+      preLoaderRoute: typeof ApiFilesReadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/files/upload': {
+      id: '/api/files/upload'
+      path: '/api/files/upload'
+      fullPath: '/api/files/upload'
+      preLoaderRoute: typeof ApiFilesUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiFilesReadRoute: ApiFilesReadRoute,
+  ApiFilesUploadRoute: ApiFilesUploadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
